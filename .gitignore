@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+cmake-build-debug/
+cmake-build-release/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Agent runtime state
+.mini_nn/
+agent_output/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

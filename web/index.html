@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mini_nn_cpp Agent Web Chat</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">A</div>
+        <div>
+          <h1>Agent Web Chat</h1>
+          <p>本地验证界面</p>
+        </div>
+      </div>
+      <section class="panel">
+        <h2>运行状态</h2>
+        <div id="status-model" class="meta-row">模型: -</div>
+        <div id="status-port" class="meta-row">端口: -</div>
+        <div id="status-overall" class="meta-row">健康: 未知</div>
+        <div id="status-busy" class="meta-row">状态: 空闲</div>
+        <div id="status-self-check" class="meta-row">最近自检: 未执行</div>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>能力快照</h2>
+          <button id="self-check-button" type="button" class="secondary-button compact-button">运行自检</button>
+        </div>
+        <div id="capability-summary" class="meta-row">正在加载能力状态...</div>
+        <div id="capability-list" class="capability-grid"></div>
+      </section>
+      <section class="panel">
+        <h2>快捷验证</h2>
+        <div class="quick-actions">
+          <button class="quick-action" data-prompt="Read the file src/main.cpp and summarize the supported commands.">读源码命令</button>
+          <button class="quick-action" data-prompt="Search the workspace for ToolRegistry and summarize where it appears.">搜代码</button>
+          <button class="quick-action" data-prompt="List the running processes and tell me whether explorer.exe appears.">查进程</button>
+          <button class="quick-action" data-prompt="List the visible windows and summarize the top five titles.">查窗口</button>
+          <button class="quick-action danger" data-prompt="Open the application notepad.exe.">打开记事本</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>能力边界</h2>
+        <ul class="capabilities">
+          <li>读文件、列目录、搜代码</li>
+          <li>写工作区文件、局部改文件</li>
+          <li>执行受限开发命令</li>
+          <li>列进程、列窗口</li>
+          <li>打开应用、聚焦窗口</li>
+        </ul>
+      </section>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <div>
+          <h2>对话</h2>
+          <p>这个界面直接调用本地 Agent。高风险动作会触发网页审批，执行完成后会展示步骤 trace。</p>
+        </div>
+        <button id="clear-button" class="secondary-button">清空历史</button>
+      </header>
+
+      <section class="trace-panel">
+        <div class="trace-header">
+          <h3>执行步骤</h3>
+          <p id="trace-status">最近一次执行还没有步骤。</p>
+        </div>
+        <div id="trace-steps" class="trace-steps"></div>
+      </section>
+
+      <section id="messages" class="messages"></section>
+
+      <form id="composer" class="composer">
+        <textarea id="message-input" placeholder="输入你的问题，例如：List the running processes and tell me whether explorer.exe appears." rows="4"></textarea>
+        <div class="composer-actions">
+          <div id="composer-status" class="composer-status">就绪</div>
+          <button id="send-button" type="submit" class="primary-button">发送</button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <section id="approval-sheet" class="approval-sheet hidden">
+    <div class="approval-card">
+      <div class="approval-header">
+        <div>
+          <h3>待审批动作</h3>
+          <p id="approval-tool">工具: -</p>
+        </div>
+        <span id="approval-risk" class="risk-badge">-</span>
+      </div>
+      <div class="approval-body">
+        <div class="approval-block">
+          <h4>原因</h4>
+          <p id="approval-reason">-</p>
+        </div>
+        <div class="approval-block">
+          <h4>摘要</h4>
+          <p id="approval-summary">-</p>
+        </div>
+        <div class="approval-block">
+          <h4>详情</h4>
+          <pre id="approval-details"></pre>
+        </div>
+      </div>
+      <div class="approval-actions">
+        <button id="deny-button" class="secondary-button" type="button">拒绝</button>
+        <button id="approve-button" class="primary-button" type="button">批准</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>
