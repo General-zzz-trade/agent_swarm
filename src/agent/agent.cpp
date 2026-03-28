@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 #include "action_parser.h"
 
 namespace {
@@ -102,6 +104,10 @@ Agent::Agent(std::unique_ptr<IModelClient> client,
 }
 
 std::string Agent::run_turn(const std::string& user_input) {
+    if (client_->supports_tools()) {
+        return run_turn_structured(user_input);
+    }
+
     last_execution_trace_.clear();
     notify_trace_updated();
     push_history({"user", user_input, ""});
@@ -398,6 +404,180 @@ bool Agent::request_approval(const Action& action,
     const bool approved = approval_provider_->approve(request);
     log_debug("Approval", approved ? "Approved by user" : "Denied by user");
     return approved;
+}
+
+std::vector<ChatMessage> Agent::build_chat_messages() const {
+    std::vector<ChatMessage> messages;
+
+    // System message
+    std::ostringstream system_prompt;
+    system_prompt << "You are a local C++ coding agent running inside a workspace.\n";
+    system_prompt << "Workspace root: " << workspace_root_.string() << "\n\n";
+    system_prompt << "Decision rules:\n";
+    system_prompt << "- Use the appropriate tool when the user asks about files, code, calculations, or system state.\n";
+    system_prompt << "- write_file, edit_file, and run_command require user approval.\n";
+    system_prompt << "- If a tool already gives the needed facts, reply directly.\n";
+    system_prompt << "- Never invent file contents.\n";
+    messages.push_back({ChatRole::system, system_prompt.str()});
+
+    // Convert history
+    for (const auto& msg : history_) {
+        if (msg.role == "user") {
+            messages.push_back({ChatRole::user, msg.content});
+        } else if (msg.role == "assistant") {
+            messages.push_back({ChatRole::assistant, msg.content});
+        } else if (msg.role == "tool") {
+            ChatMessage tool_msg;
+            tool_msg.role = ChatRole::tool;
+            tool_msg.content = msg.content;
+            tool_msg.name = msg.name;
+            // Find the tool_call_id from the previous assistant message
+            if (!messages.empty()) {
+                const auto& prev = messages.back();
+                if (prev.role == ChatRole::assistant) {
+                    for (const auto& tc : prev.tool_calls) {
+                        if (tc.name == msg.name) {
+                            tool_msg.tool_call_id = tc.id;
+                            break;
+                        }
+                    }
+                }
+            }
+            messages.push_back(std::move(tool_msg));
+        } else if (msg.role == "system") {
+            messages.push_back({ChatRole::user, "[system] " + msg.content});
+        }
+    }
+
+    return messages;
+}
+
+std::vector<ToolSchema> Agent::build_tool_schemas() const {
+    std::vector<ToolSchema> schemas;
+    for (const Tool* tool : tools_.list()) {
+        schemas.push_back(tool->schema());
+    }
+    return schemas;
+}
+
+std::string Agent::run_turn_structured(const std::string& user_input) {
+    last_execution_trace_.clear();
+    notify_trace_updated();
+    push_history({"user", user_input, ""});
+
+    TaskRunner task_runner(
+        policy_, tools_,
+        [this](const std::string& title, const std::string& body) { log_debug(title, body); },
+        [this](const std::string& stage, const std::string& tool_name, const std::string& target,
+               const std::string& detail, bool approved) {
+            log_tool_audit(stage, tool_name, target, detail, approved);
+        },
+        [this](const Action& action, const PolicyDecision& decision, const Tool& tool) {
+            return request_approval(action, decision, tool);
+        },
+        [](const Action& action) { return audit_target_for_action(action); });
+
+    for (int step = 0; step < runtime_config_.max_model_steps; ++step) {
+        const std::vector<ChatMessage> messages = build_chat_messages();
+        const std::vector<ToolSchema> schemas = build_tool_schemas();
+
+        log_debug("Structured Chat", "messages=" + std::to_string(messages.size()) +
+                  " tools=" + std::to_string(schemas.size()));
+
+        const ChatMessage response = client_->chat(messages, schemas);
+        log_debug("Model Response", "content=" + response.content +
+                  " tool_calls=" + std::to_string(response.tool_calls.size()));
+
+        // If no tool calls, treat as reply
+        if (!response.has_tool_calls()) {
+            push_history({"assistant", response.content, ""});
+            return response.content;
+        }
+
+        // Store assistant message with tool calls in history for context
+        // (Simplified: store the text content as the assistant turn)
+        Message assistant_msg;
+        assistant_msg.role = "assistant";
+        assistant_msg.content = response.content;
+        // We need to track tool_calls for the next message's tool_call_id
+        // Store as a special history entry
+        push_history(std::move(assistant_msg));
+
+        // Execute each tool call
+        for (const auto& tool_call : response.tool_calls) {
+            Action action;
+            action.type = ActionType::tool;
+            action.tool_name = tool_call.name;
+            action.reason = "Model requested via function calling";
+            action.risk = "low";
+            action.requires_confirmation = false;
+
+            // Parse structured arguments back to the string format tools expect
+            try {
+                auto j = nlohmann::json::parse(tool_call.arguments);
+                if (j.contains("args")) {
+                    action.args = j["args"].get<std::string>();
+                } else {
+                    // For tools that use structured params, serialize as key=value lines
+                    std::ostringstream args_str;
+                    for (auto it = j.begin(); it != j.end(); ++it) {
+                        if (it->is_string()) {
+                            args_str << it.key() << "=" << it->get<std::string>() << "\n";
+                        } else {
+                            args_str << it.key() << "=" << it->dump() << "\n";
+                        }
+                    }
+                    action.args = args_str.str();
+                    // Trim trailing newline
+                    if (!action.args.empty() && action.args.back() == '\n') {
+                        action.args.pop_back();
+                    }
+                }
+            } catch (...) {
+                action.args = tool_call.arguments;
+            }
+
+            ExecutionStep active_step;
+            active_step.index = last_execution_trace_.size() + 1;
+            active_step.tool_name = action.tool_name;
+            active_step.args = action.args;
+            active_step.reason = action.reason;
+            active_step.risk = action.risk;
+            active_step.status = ExecutionStepStatus::planned;
+            active_step.detail = "Pending execution";
+            last_execution_trace_.push_back(active_step);
+            notify_trace_updated();
+
+            const TaskStepResult step_result = task_runner.execute(action, active_step.index);
+            last_execution_trace_.back() = step_result.step;
+            notify_trace_updated();
+
+            std::string history_content;
+            std::string history_name = action.tool_name;
+            if (step_result.observation.channel == "tool") {
+                history_content =
+                    std::string(step_result.observation.success ? "TOOL_OK\n" : "TOOL_ERROR\n") +
+                    step_result.observation.content;
+            } else if (step_result.observation.channel == "policy") {
+                history_content = "POLICY_DENY\n" + step_result.observation.content;
+                history_name = "policy";
+            } else if (step_result.observation.channel == "approval") {
+                history_content = "APPROVAL_DENY\n" + step_result.observation.content;
+                history_name = "approval";
+            } else {
+                history_content = step_result.observation.content;
+            }
+
+            push_history({"tool", history_content, history_name});
+
+            if (step_result.should_return_reply) {
+                push_history({"assistant", step_result.reply, ""});
+                return step_result.reply;
+            }
+        }
+    }
+
+    throw std::runtime_error("Agent exceeded the maximum number of model steps");
 }
 
 void Agent::log_debug(const std::string& title, const std::string& body) const {

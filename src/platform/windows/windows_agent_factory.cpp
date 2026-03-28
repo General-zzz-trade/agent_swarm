@@ -8,6 +8,8 @@
 #include "../../app/app_config.h"
 #include "../../app/approval_provider_factory.h"
 #include "../../app/file_audit_logger.h"
+#include "../../app/model_client_factory.h"
+#include "winhttp_transport.h"
 #include "windows_command_runner.h"
 #include "windows_file_system.h"
 #include "windows_ollama_model_client.h"
@@ -26,8 +28,14 @@ AgentServices create_windows_agent_services(const AppConfig& config,
     services.ui_automation = std::make_shared<WindowsUiAutomation>();
     services.window_controller = std::make_shared<WindowsWindowController>();
     services.approval_provider = create_approval_provider(config.approval, input, output);
-    services.model_client =
-        std::make_unique<WindowsOllamaModelClient>(options.model, config.ollama);
+
+    auto transport = std::make_shared<WinHttpTransport>();
+    services.model_client = create_model_client(config, options.model, transport);
+    if (services.model_client == nullptr) {
+        // Fallback: legacy Ollama generate client
+        services.model_client =
+            std::make_unique<WindowsOllamaModelClient>(options.model, config.ollama, transport);
+    }
     return services;
 }
 

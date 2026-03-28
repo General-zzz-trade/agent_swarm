@@ -16,6 +16,8 @@
 #include "../core/interfaces/file_system.h"
 #include "../core/interfaces/model_client.h"
 #include "../core/interfaces/approval_provider.h"
+#include "../core/model/chat_message.h"
+#include "../core/model/tool_schema.h"
 #include "action.h"
 #include "execution_step.h"
 #include "message.h"
@@ -60,6 +62,9 @@ private:
     TraceObserver trace_observer_;
 
     std::string build_prompt() const;
+    std::vector<ChatMessage> build_chat_messages() const;
+    std::vector<ToolSchema> build_tool_schemas() const;
+    std::string run_turn_structured(const std::string& user_input);
     void push_history(Message message);
     void enforce_history_budget();
     void notify_trace_updated() const;

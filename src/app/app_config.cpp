@@ -107,6 +107,26 @@ void apply_config_entry(AppConfig* config, const std::string& key, const std::st
         config->default_model = value;
         return;
     }
+    if (key == "provider") {
+        config->provider = value;
+        return;
+    }
+    if (key == "openai.base_url") {
+        config->openai_base_url = value;
+        return;
+    }
+    if (key == "openai.model") {
+        config->openai_model = value;
+        return;
+    }
+    if (key == "claude.model") {
+        config->claude_model = value;
+        return;
+    }
+    if (key == "gemini.model") {
+        config->gemini_model = value;
+        return;
+    }
     if (key == "ollama.host") {
         config->ollama.host = value;
         return;
@@ -249,7 +269,12 @@ void apply_env_override(AppConfig* config, const char* env_name, const std::stri
 }
 
 void load_environment_overrides(AppConfig* config) {
+    apply_env_override(config, "MINI_NN_PROVIDER", "provider");
     apply_env_override(config, "MINI_NN_MODEL", "default_model");
+    apply_env_override(config, "MINI_NN_OPENAI_BASE_URL", "openai.base_url");
+    apply_env_override(config, "MINI_NN_OPENAI_MODEL", "openai.model");
+    apply_env_override(config, "MINI_NN_CLAUDE_MODEL", "claude.model");
+    apply_env_override(config, "MINI_NN_GEMINI_MODEL", "gemini.model");
     apply_env_override(config, "MINI_NN_OLLAMA_HOST", "ollama.host");
     apply_env_override(config, "MINI_NN_OLLAMA_PORT", "ollama.port");
     apply_env_override(config, "MINI_NN_OLLAMA_PATH", "ollama.path");
@@ -281,25 +306,28 @@ void load_environment_overrides(AppConfig* config) {
 }
 
 void validate_config(const AppConfig& config) {
-    if (trim_copy(config.default_model).empty()) {
+    if (trim_copy(config.default_model).empty() && config.provider == "ollama") {
         throw std::runtime_error("default_model must not be empty");
     }
-    if (trim_copy(config.ollama.host).empty()) {
-        throw std::runtime_error("ollama.host must not be empty");
-    }
-    if (trim_copy(config.ollama.generate_path).empty() || config.ollama.generate_path[0] != '/') {
-        throw std::runtime_error("ollama.path must start with '/'");
-    }
 
-    const std::vector<std::pair<std::string, int>> timeouts = {
-        {"ollama.resolve_timeout_ms", config.ollama.resolve_timeout_ms},
-        {"ollama.connect_timeout_ms", config.ollama.connect_timeout_ms},
-        {"ollama.send_timeout_ms", config.ollama.send_timeout_ms},
-        {"ollama.receive_timeout_ms", config.ollama.receive_timeout_ms},
-    };
-    for (const auto& item : timeouts) {
-        if (item.second < 0) {
-            throw std::runtime_error(item.first + " must be >= 0");
+    if (config.provider == "ollama" || config.provider == "ollama-chat") {
+        if (trim_copy(config.ollama.host).empty()) {
+            throw std::runtime_error("ollama.host must not be empty");
+        }
+        if (trim_copy(config.ollama.generate_path).empty() || config.ollama.generate_path[0] != '/') {
+            throw std::runtime_error("ollama.path must start with '/'");
+        }
+
+        const std::vector<std::pair<std::string, int>> timeouts = {
+            {"ollama.resolve_timeout_ms", config.ollama.resolve_timeout_ms},
+            {"ollama.connect_timeout_ms", config.ollama.connect_timeout_ms},
+            {"ollama.send_timeout_ms", config.ollama.send_timeout_ms},
+            {"ollama.receive_timeout_ms", config.ollama.receive_timeout_ms},
+        };
+        for (const auto& item : timeouts) {
+            if (item.second < 0) {
+                throw std::runtime_error(item.first + " must be >= 0");
+            }
         }
     }
     if (config.command_policy.allowed_executables.empty()) {

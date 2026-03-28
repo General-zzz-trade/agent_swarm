@@ -1,5 +1,6 @@
 #include "task_runner.h"
 
+#include <future>
 #include <utility>
 
 namespace {
@@ -118,4 +119,54 @@ TaskStepResult TaskRunner::execute(const Action& action, std::size_t step_index)
     result.step.detail = tool_result.content;
     result.observation = {tool_result.success, "tool", tool_result.content};
     return result;
+}
+
+std::vector<TaskStepResult> TaskRunner::execute_batch(
+    const std::vector<Action>& actions, std::size_t start_index) const {
+
+    if (actions.empty()) {
+        return {};
+    }
+
+    if (actions.size() == 1) {
+        return {execute(actions[0], start_index)};
+    }
+
+    // Check if all tools are read-only (safe for parallel execution)
+    bool all_read_only = true;
+    for (const auto& action : actions) {
+        const Tool* tool = tools_.find(action.tool_name);
+        if (tool == nullptr || !tool->is_read_only()) {
+            all_read_only = false;
+            break;
+        }
+    }
+
+    if (all_read_only) {
+        // Execute in parallel
+        std::vector<std::future<TaskStepResult>> futures;
+        futures.reserve(actions.size());
+        for (std::size_t i = 0; i < actions.size(); ++i) {
+            const std::size_t idx = start_index + i;
+            futures.push_back(std::async(std::launch::async,
+                [this, &actions, i, idx]() {
+                    return execute(actions[i], idx);
+                }));
+        }
+
+        std::vector<TaskStepResult> results;
+        results.reserve(futures.size());
+        for (auto& f : futures) {
+            results.push_back(f.get());
+        }
+        return results;
+    }
+
+    // Sequential execution for write tools
+    std::vector<TaskStepResult> results;
+    results.reserve(actions.size());
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+        results.push_back(execute(actions[i], start_index + i));
+    }
+    return results;
 }

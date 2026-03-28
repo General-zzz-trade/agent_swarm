@@ -4,9 +4,12 @@ project(mini_nn_cpp)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include_directories(${CMAKE_SOURCE_DIR}/third_party)
+
 enable_testing()
 
 add_executable(mini_nn
+        src/core/net/sse_parser.cpp
         src/app/app_config.cpp
         src/app/agent_factory.cpp
         src/app/agent_cli_options.cpp
@@ -52,12 +55,18 @@ if (WIN32)
     target_sources(mini_nn PRIVATE
         src/platform/windows/windows_agent_factory.cpp
         src/platform/windows/ollama_json_utils.cpp
+        src/platform/windows/winhttp_transport.cpp
         src/platform/windows/windows_command_runner.cpp
         src/platform/windows/windows_file_system.cpp
         src/platform/windows/windows_process_manager.cpp
         src/platform/windows/windows_ui_automation.cpp
         src/platform/windows/windows_window_controller.cpp
         src/platform/windows/windows_ollama_model_client.cpp
+        src/providers/openai_client.cpp
+        src/providers/claude_client.cpp
+        src/providers/gemini_client.cpp
+        src/providers/ollama_chat_client.cpp
+        src/app/model_client_factory.cpp
     )
     target_link_libraries(mini_nn PRIVATE user32 winhttp ws2_32)
 elseif (UNIX AND NOT APPLE)
@@ -68,6 +77,7 @@ endif()
 
 add_executable(kernel_tests
         tests/kernel_tests.cpp
+        src/core/net/sse_parser.cpp
         src/agent/action_parser.cpp
         src/agent/agent.cpp
         src/agent/calculator_tool.cpp
@@ -108,12 +118,18 @@ if (WIN32)
     target_sources(kernel_tests PRIVATE
             src/platform/windows/windows_agent_factory.cpp
             src/platform/windows/ollama_json_utils.cpp
+            src/platform/windows/winhttp_transport.cpp
             src/platform/windows/windows_command_runner.cpp
             src/platform/windows/windows_file_system.cpp
             src/platform/windows/windows_process_manager.cpp
             src/platform/windows/windows_ui_automation.cpp
             src/platform/windows/windows_window_controller.cpp
             src/platform/windows/windows_ollama_model_client.cpp
+            src/providers/openai_client.cpp
+            src/providers/claude_client.cpp
+            src/providers/gemini_client.cpp
+            src/providers/ollama_chat_client.cpp
+            src/app/model_client_factory.cpp
     )
     target_link_libraries(kernel_tests PRIVATE user32 winhttp)
 elseif (UNIX AND NOT APPLE)

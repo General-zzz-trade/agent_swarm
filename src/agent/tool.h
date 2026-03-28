@@ -2,6 +2,9 @@
 #define AGENT_TOOL_H
 
 #include <string>
+#include <vector>
+
+#include "../core/model/tool_schema.h"
 
 struct ToolResult {
     bool success;
@@ -23,6 +26,14 @@ public:
         return {"", args};
     }
     virtual ToolResult run(const std::string& args) const = 0;
+
+    // Schema for structured function calling. Default: single "args" string parameter.
+    virtual ToolSchema schema() const {
+        return {name(), description(), {{"args", "string", "Tool arguments", false}}};
+    }
+
+    // Whether this tool only reads state (safe for parallel execution).
+    virtual bool is_read_only() const { return false; }
 };
 
 #endif

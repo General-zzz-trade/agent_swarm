@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "action.h"
 #include "execution_step.h"
@@ -38,6 +39,8 @@ public:
                AuditTargetBuilder audit_target_builder);
 
     TaskStepResult execute(const Action& action, std::size_t step_index) const;
+    std::vector<TaskStepResult> execute_batch(const std::vector<Action>& actions,
+                                               std::size_t start_index) const;
 
 private:
     const PermissionPolicy& policy_;
