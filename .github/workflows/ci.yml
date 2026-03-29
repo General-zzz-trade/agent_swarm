@@ -12,31 +12,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake make
+
       - name: Configure CMake
-        run: cmake -B build -S .
+        shell: msys2 {0}
+        run: cmake -B build -S . -G "MinGW Makefiles"
 
       - name: Build all targets
-        run: cmake --build build --config Release -j4
+        shell: msys2 {0}
+        run: cmake --build build -j4
 
       - name: Run kernel tests
-        run: ./build/Release/kernel_tests.exe
-        continue-on-error: true
+        shell: msys2 {0}
+        run: ./build/kernel_tests.exe
 
       - name: Run integration tests
-        run: ./build/Release/agent_integration_tests.exe
-        continue-on-error: true
+        shell: msys2 {0}
+        run: ./build/agent_integration_tests.exe
 
       - name: Run capability tests
-        run: ./build/Release/capability_tests.exe
+        shell: msys2 {0}
+        run: ./build/capability_tests.exe
         timeout-minutes: 2
-        continue-on-error: true
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: agent-swarm-windows-x64
-          path: build/Release/mini_nn.exe
-        continue-on-error: true
+          path: build/mini_nn.exe
 
   build-linux:
     runs-on: ubuntu-latest
