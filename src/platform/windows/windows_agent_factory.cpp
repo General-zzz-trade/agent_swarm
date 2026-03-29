@@ -47,7 +47,7 @@ std::unique_ptr<Agent> create_windows_agent(const std::filesystem::path& workspa
     AgentServices services = create_windows_agent_services(config, options, input, output);
     if (services.audit_logger == nullptr) {
         services.audit_logger = std::make_shared<FileAuditLogger>(
-            workspace_root / ".mini_nn" / "audit.log");
+            workspace_root / ".bolt" / "audit.log");
     }
     return create_agent(workspace_root, config, options, std::move(services));
 }

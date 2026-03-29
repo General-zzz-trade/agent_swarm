@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(mini_nn_cpp)
+project(bolt)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,7 +8,7 @@ include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
 enable_testing()
 
-add_executable(mini_nn
+add_executable(bolt
         src/core/threading/thread_pool.cpp
         src/core/indexing/file_index.cpp
         src/core/indexing/file_prefetch.cpp
@@ -62,7 +62,7 @@ add_executable(mini_nn
 )
 
 if (WIN32)
-    target_sources(mini_nn PRIVATE
+    target_sources(bolt PRIVATE
         src/platform/windows/windows_agent_factory.cpp
         src/platform/windows/ollama_json_utils.cpp
         src/platform/windows/winhttp_transport.cpp
@@ -79,10 +79,10 @@ if (WIN32)
         src/providers/ollama_chat_client.cpp
         src/app/model_client_factory.cpp
     )
-    target_link_libraries(mini_nn PRIVATE user32 winhttp ws2_32)
+    target_link_libraries(bolt PRIVATE user32 winhttp ws2_32)
 elseif (UNIX)
     # Linux and macOS share POSIX implementations
-    target_sources(mini_nn PRIVATE
+    target_sources(bolt PRIVATE
         src/platform/linux/linux_agent_factory.cpp
         src/platform/linux/linux_file_system.cpp
         src/platform/linux/linux_command_runner.cpp
@@ -94,7 +94,7 @@ elseif (UNIX)
         src/providers/ollama_chat_client.cpp
         src/app/model_client_factory.cpp
     )
-    target_link_libraries(mini_nn PRIVATE pthread)
+    target_link_libraries(bolt PRIVATE pthread)
 endif()
 
 add_executable(kernel_tests

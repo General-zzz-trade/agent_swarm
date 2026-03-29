@@ -50,7 +50,7 @@ std::unique_ptr<Agent> create_linux_agent(const std::filesystem::path& workspace
     AgentServices services = create_linux_agent_services(config, options, input, output);
     if (services.audit_logger == nullptr) {
         services.audit_logger = std::make_shared<FileAuditLogger>(
-            workspace_root / ".mini_nn" / "audit.log");
+            workspace_root / ".bolt" / "audit.log");
     }
     return create_agent(workspace_root, config, options, std::move(services));
 }

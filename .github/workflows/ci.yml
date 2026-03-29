@@ -40,8 +40,8 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: agent-swarm-windows-x64
-          path: build/mini_nn.exe
+          name: bolt-windows-x64
+          path: build/bolt.exe
 
   build-linux:
     runs-on: ubuntu-latest

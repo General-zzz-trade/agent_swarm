@@ -43,7 +43,7 @@ function getPlatformKey() {
 function download(url, dest) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith("https") ? https : http;
-    protocol.get(url, { headers: { "User-Agent": "agent-swarm-npm" } }, (res) => {
+    protocol.get(url, { headers: { "User-Agent": "bolt-npm" } }, (res) => {
       // Follow redirects (GitHub releases redirect to CDN)
       if (res.statusCode === 301 || res.statusCode === 302) {
         return download(res.headers.location, dest).then(resolve).catch(reject);
@@ -67,13 +67,13 @@ function download(url, dest) {
 
 async function main() {
   const platformKey = getPlatformKey();
-  const binaryName = `agent-swarm-${platformKey}`;
+  const binaryName = `bolt-${platformKey}`;
   const binDir = path.join(__dirname, "bin");
-  const binPath = path.join(binDir, os.platform() === "win32" ? "agent-swarm.exe" : "agent-swarm");
+  const binPath = path.join(binDir, os.platform() === "win32" ? "bolt.exe" : "bolt");
 
   // Skip if binary already exists (e.g., from local build)
   if (fs.existsSync(binPath)) {
-    console.log("agent-swarm binary already exists, skipping download.");
+    console.log("bolt binary already exists, skipping download.");
     return;
   }
 
@@ -81,7 +81,7 @@ async function main() {
 
   // Try downloading from GitHub Releases
   const releaseUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${binaryName}`;
-  console.log(`Downloading agent-swarm v${VERSION} for ${os.platform()}-${os.arch()}...`);
+  console.log(`Downloading bolt v${VERSION} for ${os.platform()}-${os.arch()}...`);
   console.log(`  URL: ${releaseUrl}`);
 
   try {
@@ -90,7 +90,7 @@ async function main() {
     if (os.platform() !== "win32") {
       fs.chmodSync(binPath, 0o755);
     }
-    console.log(`agent-swarm installed successfully at ${binPath}`);
+    console.log(`bolt installed successfully at ${binPath}`);
   } catch (err) {
     console.error(`\nFailed to download pre-built binary: ${err.message}`);
     console.error("\nAlternatives:");
@@ -99,7 +99,7 @@ async function main() {
     console.error("  3. Check if a release exists for v" + VERSION);
 
     // Don't fail the install — user can still build from source
-    // and manually place the binary in node_modules/agent-swarm-cpp/bin/
+    // and manually place the binary in node_modules/bolt-cpp/bin/
     process.exit(0);
   }
 }

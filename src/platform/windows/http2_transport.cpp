@@ -31,7 +31,7 @@ std::string from_wide(const std::wstring& wstr) {
 
 Http2Transport::Http2Transport(std::size_t max_connections_per_host)
     : max_connections_per_host_(max_connections_per_host) {
-    session_ = WinHttpOpen(L"AgentSwarm/2.0",
+    session_ = WinHttpOpen(L"Bolt/1.0",
                            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                            WINHTTP_NO_PROXY_NAME,
                            WINHTTP_NO_PROXY_BYPASS, 0);

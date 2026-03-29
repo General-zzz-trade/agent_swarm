@@ -1,5 +1,5 @@
 {
-  "name": "agent-swarm-cpp",
+  "name": "bolt-agent",
   "version": "0.1.0",
   "description": "Blazing-fast autonomous coding agent written in C++. Single binary, zero dependencies, 0.1ms framework overhead.",
   "keywords": [
@@ -23,7 +23,7 @@
   },
   "license": "MIT",
   "bin": {
-    "agent-swarm": "bin/agent-swarm.js"
+    "bolt": "bin/agent-swarm.js"
   },
   "scripts": {
     "postinstall": "node install.js"

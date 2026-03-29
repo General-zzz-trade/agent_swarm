@@ -45,7 +45,7 @@ class ScopedTempDir {
 public:
     ScopedTempDir() {
         const auto base = std::filesystem::temp_directory_path();
-        path_ = base / std::filesystem::path("mini_nn_cpp_tests_" +
+        path_ = base / std::filesystem::path("bolt_tests_" +
                                              std::to_string(
                                                  static_cast<unsigned long long>(
                                                      std::filesystem::file_time_type::clock::now()
@@ -502,7 +502,7 @@ void expect_ollama_json_rejects_invalid_json() {
 
 void expect_app_config_reads_workspace_file() {
     ScopedTempDir temp_dir;
-    write_text_file(temp_dir.path() / "mini_nn_cpp.conf",
+    write_text_file(temp_dir.path() / "bolt.conf",
                     "default_model=phi4-mini\n"
                     "ollama.host=localhost\n"
                     "ollama.port=12345\n"
@@ -1496,8 +1496,8 @@ void expect_program_cli_rejects_unknown_command() {
 }
 
 void expect_program_cli_builds_usage_text() {
-    const std::string usage = build_usage_text("mini_nn.exe");
-    expect_true(usage.find("mini_nn.exe train-demo") != std::string::npos,
+    const std::string usage = build_usage_text("bolt");
+    expect_true(usage.find("bolt train-demo") != std::string::npos,
                 "Usage text should include the training command");
     expect_true(usage.find("agent [--debug|--no-debug] [--model <model>|<model>] [prompt]") !=
                     std::string::npos,

@@ -1,4 +1,4 @@
-# Agent Swarm
+# Bolt
 
 A blazing-fast autonomous coding agent written in C++. Single binary, zero dependencies, 0.1ms framework overhead.
 
@@ -6,7 +6,7 @@ A blazing-fast autonomous coding agent written in C++. Single binary, zero depen
 
 ## Why C++?
 
-| | Python agents | Agent Swarm |
+| | Python agents | Bolt |
 |---|---|---|
 | **Startup** | 2-5 seconds | **<50ms** |
 | **Framework overhead** | 10-50ms/turn | **0.1ms/turn** |
@@ -35,7 +35,7 @@ git clone https://github.com/General-zzz-trade/agent_swarm.git
 cd agent_swarm
 cmake -B build -S .
 cmake --build build -j8
-./build/mini_nn agent "Hello, what tools do you have?"
+./build/bolt agent "Hello, what tools do you have?"
 ```
 
 **Requirements**: C++17 compiler (GCC 9+, Clang 10+, MSVC 2019+), CMake 3.10+
@@ -47,7 +47,7 @@ cmake --build build -j8
 ollama pull qwen3:8b
 
 # Run agent with local model
-./build/mini_nn agent "Read CMakeLists.txt and list all build targets"
+./build/bolt agent "Read CMakeLists.txt and list all build targets"
 ```
 
 ## Usage
@@ -56,24 +56,24 @@ ollama pull qwen3:8b
 
 ```bash
 # Single-turn: ask a question, get an answer
-mini_nn agent "Search the codebase for all TODO comments"
+bolt agent "Search the codebase for all TODO comments"
 
 # Interactive mode
-mini_nn agent
+bolt agent
 > Read src/main.cpp
 > Edit it to add error handling
 > Run build_and_test to verify
 
 # Web UI (browser-based chat)
-mini_nn web-chat --port 8080
+bolt web-chat --port 8080
 
 # Performance benchmark
-mini_nn bench --rounds 5
+bolt bench --rounds 5
 ```
 
 ### Configure LLM provider
 
-Create `mini_nn_cpp.conf` in your project root:
+Create `bolt_cpp.conf` in your project root:
 
 ```ini
 # Local model (default)
@@ -164,8 +164,8 @@ export GROQ_API_KEY=gsk_...
 
 Run your own benchmark:
 ```bash
-mini_nn bench --provider ollama-chat --rounds 5
-mini_nn bench --json > results.json
+bolt bench --provider ollama-chat --rounds 5
+bolt bench --json > results.json
 ```
 
 ## Project Structure

@@ -1,4 +1,4 @@
-# Contributing to Agent Swarm
+# Contributing to Bolt
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -13,8 +13,8 @@ Thank you for your interest in contributing! This guide will help you get starte
 ### Build
 
 ```bash
-git clone https://github.com/General-zzz-trade/agent_swarm.git
-cd agent_swarm
+git clone https://github.com/General-zzz-trade/bolt.git
+cd bolt
 cmake -B build -S .
 cmake --build build -j8
 ```
@@ -34,10 +34,10 @@ All 120 tests must pass before submitting a PR.
 ```bash
 # With Ollama
 ollama pull qwen3:8b
-./build/mini_nn agent "Hello"
+./build/bolt agent "Hello"
 
 # Web UI
-./build/mini_nn web-chat --port 8080
+./build/bolt web-chat --port 8080
 ```
 
 ## How to Contribute

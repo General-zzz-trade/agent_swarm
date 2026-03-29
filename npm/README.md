@@ -1,27 +1,27 @@
-# agent-swarm-cpp
+# bolt-agent
 
 Blazing-fast autonomous coding agent written in C++. Single binary, zero dependencies, 0.1ms framework overhead.
 
 ## Install
 
 ```bash
-npm install -g agent-swarm-cpp
+npm install -g bolt-agent
 ```
 
 ## Usage
 
 ```bash
 # Single question
-agent-swarm agent "Read src/main.cpp and explain what it does"
+bolt agent "Read src/main.cpp and explain what it does"
 
 # Interactive mode
-agent-swarm agent
+bolt agent
 
 # Web UI
-agent-swarm web-chat --port 8080
+bolt web-chat --port 8080
 
 # Performance benchmark
-agent-swarm bench --rounds 5
+bolt bench --rounds 5
 ```
 
 ## With local AI (no API key needed)
@@ -29,14 +29,14 @@ agent-swarm bench --rounds 5
 ```bash
 # Install Ollama: https://ollama.ai
 ollama pull qwen3:8b
-agent-swarm agent "Search the codebase for TODO comments"
+bolt agent "Search the codebase for TODO comments"
 ```
 
 ## With cloud APIs
 
 ```bash
 export OPENAI_API_KEY=sk-...
-agent-swarm agent "Refactor the authentication module"
+bolt agent "Refactor the authentication module"
 ```
 
 ## Features
@@ -49,4 +49,4 @@ agent-swarm agent "Refactor the authentication module"
 
 ## More info
 
-GitHub: https://github.com/General-zzz-trade/agent_swarm
+GitHub: https://github.com/General-zzz-trade/bolt

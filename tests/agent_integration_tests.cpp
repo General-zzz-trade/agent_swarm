@@ -19,7 +19,7 @@ class ScopedTempDir {
 public:
     ScopedTempDir() {
         const auto base = std::filesystem::temp_directory_path();
-        path_ = base / std::filesystem::path("mini_nn_cpp_integration_" +
+        path_ = base / std::filesystem::path("bolt_integration_" +
                                              std::to_string(
                                                  static_cast<unsigned long long>(
                                                      std::filesystem::file_time_type::clock::now()
@@ -182,7 +182,7 @@ void write_text_file(const std::filesystem::path& path, const std::string& conte
 
 void expect_prompt_mode_runs_command_round_trip() {
     ScopedTempDir temp_dir;
-    write_text_file(temp_dir.path() / "mini_nn_cpp.conf",
+    write_text_file(temp_dir.path() / "bolt.conf",
                     "approval.mode=prompt\n"
                     "agent.max_model_steps=3\n");
 
@@ -218,7 +218,7 @@ void expect_prompt_mode_runs_command_round_trip() {
 
 void expect_auto_approve_mode_runs_without_prompt() {
     ScopedTempDir temp_dir;
-    write_text_file(temp_dir.path() / "mini_nn_cpp.conf",
+    write_text_file(temp_dir.path() / "bolt.conf",
                     "approval.mode=auto-approve\n"
                     "agent.max_model_steps=3\n");
 
@@ -251,7 +251,7 @@ void expect_auto_approve_mode_runs_without_prompt() {
 
 void expect_auto_deny_mode_blocks_without_prompt() {
     ScopedTempDir temp_dir;
-    write_text_file(temp_dir.path() / "mini_nn_cpp.conf",
+    write_text_file(temp_dir.path() / "bolt.conf",
                     "approval.mode=auto-deny\n"
                     "agent.max_model_steps=3\n");
 

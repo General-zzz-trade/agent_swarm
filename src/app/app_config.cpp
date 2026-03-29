@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr const char* kConfigFileName = "mini_nn_cpp.conf";
+constexpr const char* kConfigFileName = "bolt.conf";
 
 std::string trim_copy(const std::string& value) {
     const auto begin = value.find_first_not_of(" \t\r\n");
@@ -285,44 +285,44 @@ void apply_env_override(AppConfig* config, const char* env_name, const std::stri
 }
 
 void load_environment_overrides(AppConfig* config) {
-    apply_env_override(config, "MINI_NN_PROVIDER", "provider");
-    apply_env_override(config, "MINI_NN_MODEL", "default_model");
-    apply_env_override(config, "MINI_NN_OPENAI_BASE_URL", "openai.base_url");
-    apply_env_override(config, "MINI_NN_OPENAI_MODEL", "openai.model");
-    apply_env_override(config, "MINI_NN_CLAUDE_MODEL", "claude.model");
-    apply_env_override(config, "MINI_NN_GEMINI_MODEL", "gemini.model");
-    apply_env_override(config, "MINI_NN_GROQ_BASE_URL", "groq.base_url");
-    apply_env_override(config, "MINI_NN_GROQ_MODEL", "groq.model");
-    apply_env_override(config, "MINI_NN_ROUTER_FAST_PROVIDER", "router.fast_provider");
-    apply_env_override(config, "MINI_NN_ROUTER_STRONG_PROVIDER", "router.strong_provider");
-    apply_env_override(config, "MINI_NN_OLLAMA_HOST", "ollama.host");
-    apply_env_override(config, "MINI_NN_OLLAMA_PORT", "ollama.port");
-    apply_env_override(config, "MINI_NN_OLLAMA_PATH", "ollama.path");
-    apply_env_override(config, "MINI_NN_OLLAMA_RESOLVE_TIMEOUT_MS", "ollama.resolve_timeout_ms");
-    apply_env_override(config, "MINI_NN_OLLAMA_CONNECT_TIMEOUT_MS", "ollama.connect_timeout_ms");
-    apply_env_override(config, "MINI_NN_OLLAMA_SEND_TIMEOUT_MS", "ollama.send_timeout_ms");
-    apply_env_override(config, "MINI_NN_OLLAMA_RECEIVE_TIMEOUT_MS", "ollama.receive_timeout_ms");
-    apply_env_override(config, "MINI_NN_ALLOWED_EXECUTABLES", "commands.allowed_executables");
-    apply_env_override(config, "MINI_NN_COMMAND_TIMEOUT_MS", "commands.timeout_ms");
-    apply_env_override(config, "MINI_NN_COMMAND_MAX_OUTPUT_BYTES", "commands.max_output_bytes");
-    apply_env_override(config, "MINI_NN_ALLOWED_GIT_SUBCOMMANDS",
+    apply_env_override(config, "BOLT_PROVIDER", "provider");
+    apply_env_override(config, "BOLT_MODEL", "default_model");
+    apply_env_override(config, "BOLT_OPENAI_BASE_URL", "openai.base_url");
+    apply_env_override(config, "BOLT_OPENAI_MODEL", "openai.model");
+    apply_env_override(config, "BOLT_CLAUDE_MODEL", "claude.model");
+    apply_env_override(config, "BOLT_GEMINI_MODEL", "gemini.model");
+    apply_env_override(config, "BOLT_GROQ_BASE_URL", "groq.base_url");
+    apply_env_override(config, "BOLT_GROQ_MODEL", "groq.model");
+    apply_env_override(config, "BOLT_ROUTER_FAST_PROVIDER", "router.fast_provider");
+    apply_env_override(config, "BOLT_ROUTER_STRONG_PROVIDER", "router.strong_provider");
+    apply_env_override(config, "BOLT_OLLAMA_HOST", "ollama.host");
+    apply_env_override(config, "BOLT_OLLAMA_PORT", "ollama.port");
+    apply_env_override(config, "BOLT_OLLAMA_PATH", "ollama.path");
+    apply_env_override(config, "BOLT_OLLAMA_RESOLVE_TIMEOUT_MS", "ollama.resolve_timeout_ms");
+    apply_env_override(config, "BOLT_OLLAMA_CONNECT_TIMEOUT_MS", "ollama.connect_timeout_ms");
+    apply_env_override(config, "BOLT_OLLAMA_SEND_TIMEOUT_MS", "ollama.send_timeout_ms");
+    apply_env_override(config, "BOLT_OLLAMA_RECEIVE_TIMEOUT_MS", "ollama.receive_timeout_ms");
+    apply_env_override(config, "BOLT_ALLOWED_EXECUTABLES", "commands.allowed_executables");
+    apply_env_override(config, "BOLT_COMMAND_TIMEOUT_MS", "commands.timeout_ms");
+    apply_env_override(config, "BOLT_COMMAND_MAX_OUTPUT_BYTES", "commands.max_output_bytes");
+    apply_env_override(config, "BOLT_ALLOWED_GIT_SUBCOMMANDS",
                        "commands.allowed_subcommands.git");
-    apply_env_override(config, "MINI_NN_ALLOWED_OLLAMA_SUBCOMMANDS",
+    apply_env_override(config, "BOLT_ALLOWED_OLLAMA_SUBCOMMANDS",
                        "commands.allowed_subcommands.ollama");
-    apply_env_override(config, "MINI_NN_POLICY_READ_ONLY_TOOLS", "policy.read_only_tools");
-    apply_env_override(config, "MINI_NN_POLICY_BOUNDED_WRITE_TOOLS",
+    apply_env_override(config, "BOLT_POLICY_READ_ONLY_TOOLS", "policy.read_only_tools");
+    apply_env_override(config, "BOLT_POLICY_BOUNDED_WRITE_TOOLS",
                        "policy.bounded_write_tools");
-    apply_env_override(config, "MINI_NN_POLICY_BOUNDED_COMMAND_TOOLS",
+    apply_env_override(config, "BOLT_POLICY_BOUNDED_COMMAND_TOOLS",
                        "policy.bounded_command_tools");
-    apply_env_override(config, "MINI_NN_POLICY_BOUNDED_DESKTOP_TOOLS",
+    apply_env_override(config, "BOLT_POLICY_BOUNDED_DESKTOP_TOOLS",
                        "policy.bounded_desktop_tools");
-    apply_env_override(config, "MINI_NN_POLICY_BLOCK_HIGH_RISK", "policy.block_high_risk");
-    apply_env_override(config, "MINI_NN_AGENT_DEFAULT_DEBUG", "agent.default_debug");
-    apply_env_override(config, "MINI_NN_AGENT_MAX_MODEL_STEPS", "agent.max_model_steps");
-    apply_env_override(config, "MINI_NN_AGENT_HISTORY_WINDOW", "agent.history_window");
-    apply_env_override(config, "MINI_NN_AGENT_HISTORY_BYTE_BUDGET",
+    apply_env_override(config, "BOLT_POLICY_BLOCK_HIGH_RISK", "policy.block_high_risk");
+    apply_env_override(config, "BOLT_AGENT_DEFAULT_DEBUG", "agent.default_debug");
+    apply_env_override(config, "BOLT_AGENT_MAX_MODEL_STEPS", "agent.max_model_steps");
+    apply_env_override(config, "BOLT_AGENT_HISTORY_WINDOW", "agent.history_window");
+    apply_env_override(config, "BOLT_AGENT_HISTORY_BYTE_BUDGET",
                        "agent.history_byte_budget");
-    apply_env_override(config, "MINI_NN_APPROVAL_MODE", "approval.mode");
+    apply_env_override(config, "BOLT_APPROVAL_MODE", "approval.mode");
 }
 
 void validate_config(const AppConfig& config) {

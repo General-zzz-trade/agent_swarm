@@ -6,7 +6,7 @@
 
 namespace {
 
-constexpr const wchar_t* kUserAgent = L"mini_nn_cpp/2.0";
+constexpr const wchar_t* kUserAgent = L"Bolt/1.0";
 
 class WinHttpHandle {
 public:

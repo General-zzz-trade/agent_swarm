@@ -45,11 +45,11 @@ jobs:
 
       - name: Package binary
         run: |
-          cp build/mini_nn${{ matrix.ext }} agent-swarm-${{ matrix.name }}${{ matrix.ext }}
+          cp build/bolt${{ matrix.ext }} bolt-${{ matrix.name }}${{ matrix.ext }}
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: agent-swarm-${{ matrix.name }}${{ matrix.ext }}
+          files: bolt-${{ matrix.name }}${{ matrix.ext }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
