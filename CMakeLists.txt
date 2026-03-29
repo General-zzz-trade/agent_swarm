@@ -107,7 +107,8 @@ elseif (UNIX)
         src/providers/ollama_chat_client.cpp
         src/app/model_client_factory.cpp
     )
-    target_link_libraries(bolt_core PUBLIC pthread)
+    find_package(CURL REQUIRED)
+    target_link_libraries(bolt_core PUBLIC pthread CURL::libcurl)
 endif()
 
 # --- Main executable ---
