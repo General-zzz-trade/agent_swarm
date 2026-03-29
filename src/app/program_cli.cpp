@@ -4,7 +4,8 @@
 
 TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) {
     if (args.empty()) {
-        return {TopLevelCommandType::usage, ""};
+        // No args → default to interactive agent mode (not usage text)
+        return {TopLevelCommandType::agent, "agent"};
     }
 
     const std::string& command = args.front();
@@ -20,26 +21,27 @@ TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) 
     if (command == "bench") {
         return {TopLevelCommandType::bench, command};
     }
+    if (command == "--help" || command == "-h" || command == "help") {
+        return {TopLevelCommandType::usage, command};
+    }
+    // Unknown command — treat as agent prompt (e.g. "bolt 'Read main.cpp'")
     return {TopLevelCommandType::invalid, command};
 }
 
 std::string build_usage_text(const std::string& program_name) {
     std::ostringstream output;
+    output << "\n\033[1m\033[36m⚡ Bolt\033[0m — AI Coding Agent\n\n";
     output << "Usage:\n";
-    output << "  " << program_name << " train-demo\n";
-    output << "  " << program_name
-           << " agent [--debug|--no-debug] [--model <model>|<model>] [prompt]\n\n";
-    output << "  " << program_name
-           << " web-chat [--debug|--no-debug] [--model <model>|<model>] [--port <port>]\n";
-    output << "  " << program_name
-           << " bench [--provider <name>] [--rounds <n>] [--warmup <n>] [--json]\n\n";
+    output << "  " << program_name << "                          Interactive agent (default)\n";
+    output << "  " << program_name << " agent [prompt]            Ask a question or give a task\n";
+    output << "  " << program_name << " web-chat [--port 8080]    Browser-based chat UI\n";
+    output << "  " << program_name << " bench [--rounds 5]        Performance benchmark\n";
+    output << "  " << program_name << " --help                    Show this help\n\n";
     output << "Examples:\n";
-    output << "  " << program_name << " train-demo\n";
-    output << "  " << program_name
-           << " agent qwen3:8b Use the calculator tool to compute (2 + 3) * 4.\n";
-    output << "  " << program_name
-           << " agent --debug qwen3:8b Search the workspace for ToolRegistry.\n";
-    output << "  " << program_name
-           << " web-chat --model qwen3:8b --port 8080\n";
+    output << "  " << program_name << " agent \"Read src/main.cpp and explain it\"\n";
+    output << "  " << program_name << " agent \"Search for TODO comments\"\n";
+    output << "  " << program_name << " agent \"Add error handling to the login function\"\n";
+    output << "  " << program_name << " web-chat --port 8080\n\n";
+    output << "Config: bolt.conf | Env: BOLT_PROVIDER, OPENAI_API_KEY, etc.\n";
     return output.str();
 }

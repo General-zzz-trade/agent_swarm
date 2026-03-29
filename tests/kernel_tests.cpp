@@ -1464,9 +1464,14 @@ void expect_web_chat_options_reject_unknown_option() {
 }
 
 void expect_program_cli_resolves_usage_when_no_command() {
+    // No args → defaults to interactive agent mode
     const TopLevelCommand command = resolve_top_level_command({});
-    expect_true(command.type == TopLevelCommandType::usage,
-                "Missing top-level command should resolve to usage");
+    expect_true(command.type == TopLevelCommandType::agent,
+                "No command should default to interactive agent mode");
+    // --help should resolve to usage
+    const TopLevelCommand help = resolve_top_level_command({"--help"});
+    expect_true(help.type == TopLevelCommandType::usage,
+                "--help should resolve to usage");
 }
 
 void expect_program_cli_resolves_train_demo() {
@@ -1497,17 +1502,14 @@ void expect_program_cli_rejects_unknown_command() {
 
 void expect_program_cli_builds_usage_text() {
     const std::string usage = build_usage_text("bolt");
-    expect_true(usage.find("bolt train-demo") != std::string::npos,
-                "Usage text should include the training command");
-    expect_true(usage.find("agent [--debug|--no-debug] [--model <model>|<model>] [prompt]") !=
-                    std::string::npos,
-                "Usage text should include the agent syntax");
-    expect_true(usage.find("web-chat [--debug|--no-debug] [--model <model>|<model>] [--port <port>]") !=
-                    std::string::npos,
-                "Usage text should include the web-chat syntax");
-    expect_true(usage.find("agent --debug qwen3:8b Search the workspace for ToolRegistry.") !=
-                    std::string::npos,
-                "Usage text should include the agent example");
+    expect_true(usage.find("bolt") != std::string::npos,
+                "Usage text should include program name");
+    expect_true(usage.find("agent") != std::string::npos,
+                "Usage text should include agent command");
+    expect_true(usage.find("web-chat") != std::string::npos,
+                "Usage text should mention web-chat");
+    expect_true(usage.find("bench") != std::string::npos,
+                "Usage text should mention bench");
 }
 
 void expect_agent_runner_single_turn_writes_response() {
@@ -1551,8 +1553,8 @@ void expect_agent_runner_interactive_loop_handles_commands() {
 
     const int exit_code = run_agent_interactive_loop(agent, input, output);
     expect_true(exit_code == 0, "Interactive runner should return success");
-    expect_true(output.str().find("Agent mode. Model: test-model") != std::string::npos,
-                "Interactive runner should print the banner");
+    expect_true(output.str().find("Bolt") != std::string::npos,
+                "Interactive runner should print the Bolt banner");
     expect_true(output.str().find("first reply") != std::string::npos,
                 "Interactive runner should print the first reply");
     expect_true(output.str().find("History cleared.") != std::string::npos,

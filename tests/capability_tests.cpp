@@ -767,9 +767,9 @@ void test_cli_all_commands() {
     auto c4 = resolve_top_level_command({"bench"});
     expect_true(c4.type == TopLevelCommandType::bench, "CLI bench");
     auto c5 = resolve_top_level_command({});
-    expect_true(c5.type == TopLevelCommandType::usage, "CLI usage");
-    auto c6 = resolve_top_level_command({"invalid"});
-    expect_true(c6.type == TopLevelCommandType::invalid, "CLI invalid");
+    expect_true(c5.type == TopLevelCommandType::agent, "CLI empty defaults to agent");
+    auto c6 = resolve_top_level_command({"--help"});
+    expect_true(c6.type == TopLevelCommandType::usage, "CLI --help");
 }
 
 // ============================================================
