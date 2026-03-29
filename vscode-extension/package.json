@@ -1,0 +1,73 @@
+{
+  "name": "bolt-agent",
+  "displayName": "Bolt — AI Coding Agent",
+  "description": "Blazing-fast AI coding assistant powered by a native C++ agent. 0.1ms framework overhead.",
+  "version": "0.1.0",
+  "publisher": "bolt-agent",
+  "repository": "https://github.com/General-zzz-trade/Bolt",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages", "Machine Learning", "Other"],
+  "keywords": ["ai", "agent", "coding", "ollama", "openai", "claude", "gemini"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "bolt.chat", "title": "Bolt: Open Chat" },
+      { "command": "bolt.explain", "title": "Bolt: Explain Selection" },
+      { "command": "bolt.fix", "title": "Bolt: Fix Selection" },
+      { "command": "bolt.test", "title": "Bolt: Generate Tests" },
+      { "command": "bolt.buildAndTest", "title": "Bolt: Build & Test" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bolt",
+          "title": "Bolt",
+          "icon": "$(zap)"
+        }
+      ]
+    },
+    "views": {
+      "bolt": [
+        { "type": "webview", "id": "bolt.chatView", "name": "Chat" }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        { "command": "bolt.explain", "group": "bolt", "when": "editorHasSelection" },
+        { "command": "bolt.fix", "group": "bolt", "when": "editorHasSelection" },
+        { "command": "bolt.test", "group": "bolt" }
+      ]
+    },
+    "configuration": {
+      "title": "Bolt",
+      "properties": {
+        "bolt.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to bolt binary. Leave empty to auto-detect."
+        },
+        "bolt.provider": {
+          "type": "string",
+          "default": "ollama-chat",
+          "enum": ["ollama-chat", "openai", "claude", "gemini", "groq"],
+          "description": "LLM provider to use"
+        },
+        "bolt.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name override"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
