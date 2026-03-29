@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -S . -G "MinGW Makefiles"
+
+      - name: Build all targets
+        run: cmake --build build -j4
+
+      - name: Run kernel tests
+        run: ./build/kernel_tests.exe
+
+      - name: Run integration tests
+        run: ./build/agent_integration_tests.exe
+
+      - name: Run capability tests
+        run: ./build/capability_tests.exe
+        timeout-minutes: 2
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-swarm-windows-x64
+          path: build/mini_nn.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+
+      - name: Configure CMake
+        run: cmake -B build -S .
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+        continue-on-error: true  # Linux port is WIP
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -S .
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+        continue-on-error: true  # macOS port is WIP
