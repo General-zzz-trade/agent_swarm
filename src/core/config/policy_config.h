@@ -14,6 +14,8 @@ struct PolicyConfig {
         "read_file",
         "search_code",
         "wait_for_window",
+        "task_planner",
+        "code_intel",
     };
 
     std::unordered_set<std::string> bounded_write_tools = {
@@ -23,6 +25,7 @@ struct PolicyConfig {
 
     std::unordered_set<std::string> bounded_command_tools = {
         "run_command",
+        "build_and_test",
     };
 
     std::unordered_set<std::string> bounded_desktop_tools = {

@@ -18,6 +18,11 @@
 #include "../core/interfaces/approval_provider.h"
 #include "../core/model/chat_message.h"
 #include "../core/model/tool_schema.h"
+#include "../core/threading/thread_pool.h"
+#include "../core/indexing/file_index.h"
+#include "../core/indexing/file_prefetch.h"
+#include "../core/routing/prompt_compressor.h"
+#include "../core/caching/tool_result_cache.h"
 #include "action.h"
 #include "execution_step.h"
 #include "message.h"
@@ -39,7 +44,10 @@ public:
           std::shared_ptr<IAuditLogger> audit_logger = nullptr,
           ToolRegistry tools = {});
 
+    using StreamCallback = std::function<void(const std::string& token)>;
+
     std::string run_turn(const std::string& user_input);
+    std::string run_turn_streaming(const std::string& user_input, StreamCallback on_token);
     void clear_history();
     const std::string& model() const;
     bool debug_enabled() const;
@@ -47,6 +55,15 @@ public:
     void set_trace_observer(TraceObserver observer);
     std::vector<std::string> available_tool_names() const;
     ToolResult run_diagnostic_tool(const std::string& tool_name, const std::string& args) const;
+
+    /// Access to the thread pool for external components.
+    ThreadPool& thread_pool() { return thread_pool_; }
+
+    /// Access to the file index for search tools.
+    const FileIndex& file_index() const { return file_index_; }
+
+    /// Access to the prefetch cache for tools that read files.
+    FilePrefetchCache& prefetch_cache() { return prefetch_cache_; }
 
 private:
     std::unique_ptr<IModelClient> client_;
@@ -61,10 +78,17 @@ private:
     bool debug_;
     TraceObserver trace_observer_;
 
+    ThreadPool thread_pool_;
+    FileIndex file_index_;
+    FilePrefetchCache prefetch_cache_;
+    PromptCompressor prompt_compressor_;
+    ToolResultCache tool_result_cache_;
+
     std::string build_prompt() const;
     std::vector<ChatMessage> build_chat_messages() const;
     std::vector<ToolSchema> build_tool_schemas() const;
-    std::string run_turn_structured(const std::string& user_input);
+    std::string run_turn_structured(const std::string& user_input,
+                                     StreamCallback on_token = nullptr);
     void push_history(Message message);
     void enforce_history_budget();
     void notify_trace_updated() const;

@@ -12,6 +12,7 @@
 #include "app/agent_factory.h"
 #include "app/app_config.h"
 #include "app/agent_runner.h"
+#include "app/benchmark_runner.h"
 #include "app/program_cli.h"
 #include "app/web_approval_provider.h"
 #include "app/web_chat_cli_options.h"
@@ -71,6 +72,15 @@ int run_web_chat(int argc, char* argv[]) {
     return server.run(std::cout);
 }
 
+int run_benchmark(int argc, char* argv[]) {
+    const std::filesystem::path workspace_root = std::filesystem::current_path();
+    const AppConfig config = load_app_config(workspace_root);
+    const BenchmarkConfig bench_config =
+        resolve_bench_config(collect_cli_args(argc, argv, 2));
+    run_benchmarks(config, workspace_root, bench_config, std::cout);
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -90,6 +100,8 @@ int main(int argc, char* argv[]) {
                 return run_agent(argc, argv);
             case TopLevelCommandType::web_chat:
                 return run_web_chat(argc, argv);
+            case TopLevelCommandType::bench:
+                return run_benchmark(argc, argv);
             case TopLevelCommandType::invalid:
                 print_usage(argv[0]);
                 return 1;

@@ -17,6 +17,9 @@ TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) 
     if (command == "web-chat") {
         return {TopLevelCommandType::web_chat, command};
     }
+    if (command == "bench") {
+        return {TopLevelCommandType::bench, command};
+    }
     return {TopLevelCommandType::invalid, command};
 }
 
@@ -27,7 +30,9 @@ std::string build_usage_text(const std::string& program_name) {
     output << "  " << program_name
            << " agent [--debug|--no-debug] [--model <model>|<model>] [prompt]\n\n";
     output << "  " << program_name
-           << " web-chat [--debug|--no-debug] [--model <model>|<model>] [--port <port>]\n\n";
+           << " web-chat [--debug|--no-debug] [--model <model>|<model>] [--port <port>]\n";
+    output << "  " << program_name
+           << " bench [--provider <name>] [--rounds <n>] [--warmup <n>] [--json]\n\n";
     output << "Examples:\n";
     output << "  " << program_name << " train-demo\n";
     output << "  " << program_name

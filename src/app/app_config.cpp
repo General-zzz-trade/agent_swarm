@@ -127,6 +127,22 @@ void apply_config_entry(AppConfig* config, const std::string& key, const std::st
         config->gemini_model = value;
         return;
     }
+    if (key == "groq.base_url") {
+        config->groq_base_url = value;
+        return;
+    }
+    if (key == "groq.model") {
+        config->groq_model = value;
+        return;
+    }
+    if (key == "router.fast_provider") {
+        config->router_fast_provider = value;
+        return;
+    }
+    if (key == "router.strong_provider") {
+        config->router_strong_provider = value;
+        return;
+    }
     if (key == "ollama.host") {
         config->ollama.host = value;
         return;
@@ -275,6 +291,10 @@ void load_environment_overrides(AppConfig* config) {
     apply_env_override(config, "MINI_NN_OPENAI_MODEL", "openai.model");
     apply_env_override(config, "MINI_NN_CLAUDE_MODEL", "claude.model");
     apply_env_override(config, "MINI_NN_GEMINI_MODEL", "gemini.model");
+    apply_env_override(config, "MINI_NN_GROQ_BASE_URL", "groq.base_url");
+    apply_env_override(config, "MINI_NN_GROQ_MODEL", "groq.model");
+    apply_env_override(config, "MINI_NN_ROUTER_FAST_PROVIDER", "router.fast_provider");
+    apply_env_override(config, "MINI_NN_ROUTER_STRONG_PROVIDER", "router.strong_provider");
     apply_env_override(config, "MINI_NN_OLLAMA_HOST", "ollama.host");
     apply_env_override(config, "MINI_NN_OLLAMA_PORT", "ollama.port");
     apply_env_override(config, "MINI_NN_OLLAMA_PATH", "ollama.path");

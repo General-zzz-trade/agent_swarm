@@ -47,7 +47,7 @@ ToolResult ReadFileTool::run(const std::string& args) const {
         }
 
         std::string content = read_result.content;
-        constexpr std::size_t kMaxBytes = 4000;
+        constexpr std::size_t kMaxBytes = 32000;  // was 4KB — 32KB for real files
         if (content.size() > kMaxBytes) {
             content.resize(kMaxBytes);
             content += "\n[truncated]";

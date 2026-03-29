@@ -99,6 +99,7 @@ std::string OllamaChatClient::build_request_body(const std::vector<ChatMessage>&
     json body;
     body["model"] = model_;
     body["stream"] = stream;
+    body["think"] = false;  // Disable thinking/reasoning mode for faster responses
 
     json msg_array = json::array();
     for (const auto& msg : messages) {

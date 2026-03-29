@@ -3,6 +3,8 @@
 #include <future>
 #include <utility>
 
+#include "../core/threading/thread_pool.h"
+
 namespace {
 
 void invoke_debug(const TaskRunner::DebugLogger& logger,
@@ -39,13 +41,15 @@ TaskRunner::TaskRunner(const PermissionPolicy& policy,
                        DebugLogger debug_logger,
                        AuditLogger audit_logger,
                        ApprovalRequester approval_requester,
-                       AuditTargetBuilder audit_target_builder)
+                       AuditTargetBuilder audit_target_builder,
+                       ThreadPool* pool)
     : policy_(policy),
       tools_(tools),
       debug_logger_(std::move(debug_logger)),
       audit_logger_(std::move(audit_logger)),
       approval_requester_(std::move(approval_requester)),
-      audit_target_builder_(std::move(audit_target_builder)) {}
+      audit_target_builder_(std::move(audit_target_builder)),
+      pool_(pool) {}
 
 TaskStepResult TaskRunner::execute(const Action& action, std::size_t step_index) const {
     TaskStepResult result;
@@ -143,15 +147,22 @@ std::vector<TaskStepResult> TaskRunner::execute_batch(
     }
 
     if (all_read_only) {
-        // Execute in parallel
+        // Execute in parallel using thread pool (or std::async fallback)
         std::vector<std::future<TaskStepResult>> futures;
         futures.reserve(actions.size());
         for (std::size_t i = 0; i < actions.size(); ++i) {
             const std::size_t idx = start_index + i;
-            futures.push_back(std::async(std::launch::async,
-                [this, &actions, i, idx]() {
-                    return execute(actions[i], idx);
-                }));
+            if (pool_) {
+                futures.push_back(pool_->submit(
+                    [this, &actions, i, idx]() {
+                        return execute(actions[i], idx);
+                    }));
+            } else {
+                futures.push_back(std::async(std::launch::async,
+                    [this, &actions, i, idx]() {
+                        return execute(actions[i], idx);
+                    }));
+            }
         }
 
         std::vector<TaskStepResult> results;

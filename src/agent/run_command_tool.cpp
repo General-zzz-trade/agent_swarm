@@ -95,14 +95,12 @@ CommandValidation validate_command(const std::string& command,
         return {false, "Command is empty"};
     }
 
+    // Block only dangerous metacharacters; allow pipes and redirects for dev workflows
     for (const char ch : command) {
         switch (ch) {
-            case '&':
-            case '|':
-            case ';':
-            case '<':
-            case '>':
-            case '^':
+            case '&':   // background execution — blocked
+            case ';':   // command chaining — blocked (use && in shell)
+            case '^':   // Windows escape — blocked
             case '\n':
             case '\r':
                 return {false, "Command contains blocked shell metacharacters"};

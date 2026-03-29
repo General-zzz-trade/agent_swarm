@@ -2,6 +2,8 @@
 #define AGENT_TOOL_REGISTRY_H
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "tool.h"
@@ -15,6 +17,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<Tool>> tools_;
+    std::unordered_map<std::string, Tool*> index_;  // O(1) lookup by name
 };
 
 #endif

@@ -2,6 +2,7 @@
 #define AGENT_TASK_RUNNER_H
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,8 @@
 #include "observation.h"
 #include "permission_policy.h"
 #include "tool_registry.h"
+
+class ThreadPool;
 
 struct TaskStepResult {
     ExecutionStep step;
@@ -36,7 +39,8 @@ public:
                DebugLogger debug_logger,
                AuditLogger audit_logger,
                ApprovalRequester approval_requester,
-               AuditTargetBuilder audit_target_builder);
+               AuditTargetBuilder audit_target_builder,
+               ThreadPool* pool = nullptr);
 
     TaskStepResult execute(const Action& action, std::size_t step_index) const;
     std::vector<TaskStepResult> execute_batch(const std::vector<Action>& actions,
@@ -49,6 +53,7 @@ private:
     AuditLogger audit_logger_;
     ApprovalRequester approval_requester_;
     AuditTargetBuilder audit_target_builder_;
+    ThreadPool* pool_;
 };
 
 #endif

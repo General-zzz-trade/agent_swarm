@@ -900,8 +900,10 @@ void expect_run_command_rejects_metacharacters() {
     auto runner = std::make_shared<RecordingCommandRunner>();
 
     RunCommandTool tool(temp_dir.path(), runner);
-    const ToolResult result = tool.run("git status | more");
-    expect_equal(result.success, false, "Metacharacters should be blocked");
+    // Pipes and redirects are now allowed for dev workflows.
+    // But background execution (&) and chaining (;) are still blocked.
+    const ToolResult result = tool.run("git status & echo pwned");
+    expect_equal(result.success, false, "Dangerous metacharacters should be blocked");
     expect_true(result.content.find("blocked shell metacharacters") != std::string::npos,
                 "Blocked metacharacter failure should be explicit");
 }

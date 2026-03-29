@@ -709,6 +709,73 @@ int WebChatServer::run(std::ostream& output) {
                     return;
                 }
 
+                // SSE streaming chat endpoint — real-time token passthrough
+                if (request.method == "POST" && request.path == "/api/chat/stream") {
+                    const std::string message = extract_json_string_field(request.body, "message");
+                    if (trim_copy(message).empty()) {
+                        send_json(client_socket.get(), 400,
+                                  "{\"ok\":false,\"error\":\"Message is empty\"}");
+                        return;
+                    }
+
+                    bool expected = false;
+                    if (!agent_busy_.compare_exchange_strong(expected, true)) {
+                        send_json(client_socket.get(), 409,
+                                  "{\"ok\":false,\"error\":\"Agent is busy\"}");
+                        return;
+                    }
+
+                    // Send SSE headers
+                    std::ostringstream sse_header;
+                    sse_header << "HTTP/1.1 200 OK\r\n";
+                    sse_header << "Content-Type: text/event-stream; charset=utf-8\r\n";
+                    sse_header << "Cache-Control: no-cache\r\n";
+                    sse_header << "Connection: keep-alive\r\n";
+                    sse_header << "Access-Control-Allow-Origin: *\r\n\r\n";
+                    if (!send_all(client_socket.get(), sse_header.str())) {
+                        agent_busy_.store(false);
+                        return;
+                    }
+
+                    SOCKET raw_socket = client_socket.get();
+                    std::string reply;
+                    std::string error;
+                    std::vector<ExecutionStep> trace_snapshot;
+                    {
+                        std::lock_guard<std::mutex> lock(agent_mutex_);
+                        try {
+                            reply = agent_.run_turn_streaming(message,
+                                [raw_socket](const std::string& token) {
+                                    // SSE passthrough: forward each token as an SSE event
+                                    std::string sse_event = "data: " + escape_json_string(token) + "\n\n";
+                                    (void)send_all(raw_socket, sse_event);
+                                });
+                            trace_snapshot = agent_.last_execution_trace();
+                        } catch (const std::exception& exception) {
+                            error = exception.what();
+                            trace_snapshot = agent_.last_execution_trace();
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> state_lock(state_mutex_);
+                        last_trace_snapshot_ = trace_snapshot;
+                    }
+                    agent_busy_.store(false);
+
+                    // Send final event with trace and status
+                    if (!error.empty()) {
+                        std::string err_event = "event: error\ndata: " +
+                                                escape_json_string(error) + "\n\n";
+                        (void)send_all(raw_socket, err_event);
+                    } else {
+                        std::string done_event = "event: done\ndata: " +
+                            execution_trace_json(trace_snapshot) + "\n\n";
+                        (void)send_all(raw_socket, done_event);
+                    }
+                    return;
+                }
+
+                // Original synchronous chat endpoint (kept for backward compatibility)
                 if (request.method == "POST" && request.path == "/api/chat") {
                     const std::string message = extract_json_string_field(request.body, "message");
                     if (trim_copy(message).empty()) {

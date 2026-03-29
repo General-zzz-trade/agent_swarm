@@ -91,7 +91,9 @@ Agent::Agent(std::unique_ptr<IModelClient> client,
       tools_(std::move(tools)),
       workspace_root_(std::filesystem::weakly_canonical(std::move(workspace_root))),
       runtime_config_(std::move(runtime_config)),
-      debug_(debug) {
+      debug_(debug),
+      thread_pool_(std::max(2u, std::thread::hardware_concurrency())),
+      prefetch_cache_(thread_pool_) {
     if (client_ == nullptr) {
         throw std::invalid_argument("Agent requires a model client");
     }
@@ -101,6 +103,13 @@ Agent::Agent(std::unique_ptr<IModelClient> client,
     if (tools_.empty()) {
         throw std::invalid_argument("Agent requires a tool registry");
     }
+
+    // Build file index asynchronously in background
+    thread_pool_.submit([this]() {
+        file_index_.build(workspace_root_);
+        log_debug("FileIndex", "Indexed " + std::to_string(file_index_.file_count()) +
+                  " files, " + std::to_string(file_index_.total_bytes()) + " bytes");
+    });
 }
 
 std::string Agent::run_turn(const std::string& user_input) {
@@ -122,7 +131,8 @@ std::string Agent::run_turn(const std::string& user_input) {
         [this](const Action& action, const PolicyDecision& decision, const Tool& tool) {
             return request_approval(action, decision, tool);
         },
-        [](const Action& action) { return audit_target_for_action(action); });
+        [](const Action& action) { return audit_target_for_action(action); },
+        &thread_pool_);
 
     for (int step = 0; step < runtime_config_.max_model_steps; ++step) {
         const std::string prompt = build_prompt();
@@ -204,6 +214,16 @@ std::string Agent::run_turn(const std::string& user_input) {
     }
 
     throw std::runtime_error("Agent exceeded the maximum number of model steps");
+}
+
+std::string Agent::run_turn_streaming(const std::string& user_input, StreamCallback on_token) {
+    if (client_->supports_tools() && client_->supports_streaming()) {
+        return run_turn_structured(user_input, on_token);
+    }
+    // Fall back to non-streaming
+    std::string result = run_turn(user_input);
+    if (on_token) on_token(result);
+    return result;
 }
 
 void Agent::clear_history() {
@@ -407,17 +427,69 @@ bool Agent::request_approval(const Action& action,
 }
 
 std::vector<ChatMessage> Agent::build_chat_messages() const {
-    std::vector<ChatMessage> messages;
+    std::vector<ChatMessage> raw_messages;
 
     // System message
+    // (build into raw_messages, then compress)
+    auto& messages = raw_messages;
+
+    // System message — production-grade agent instructions
     std::ostringstream system_prompt;
-    system_prompt << "You are a local C++ coding agent running inside a workspace.\n";
-    system_prompt << "Workspace root: " << workspace_root_.string() << "\n\n";
-    system_prompt << "Decision rules:\n";
-    system_prompt << "- Use the appropriate tool when the user asks about files, code, calculations, or system state.\n";
-    system_prompt << "- write_file, edit_file, and run_command require user approval.\n";
-    system_prompt << "- If a tool already gives the needed facts, reply directly.\n";
-    system_prompt << "- Never invent file contents.\n";
+
+    // Identity and context
+    system_prompt << "You are an autonomous software engineering agent. ";
+    system_prompt << "You work inside a project workspace and use tools to read, write, search, build, and test code.\n";
+    system_prompt << "Workspace: " << workspace_root_.string() << "\n\n";
+
+    // Core principles
+    system_prompt << "# Core Principles\n";
+    system_prompt << "1. ALWAYS read code before modifying it. Never guess file contents.\n";
+    system_prompt << "2. ALWAYS verify changes by running build_and_test after editing code.\n";
+    system_prompt << "3. If a build or test fails, read the error, fix the code, and re-run build_and_test. Repeat until passing.\n";
+    system_prompt << "4. For complex tasks (3+ steps), use task_planner to create a plan first.\n";
+    system_prompt << "5. Make small, incremental changes. Edit one thing, verify, then move on.\n";
+    system_prompt << "6. Use git to commit working changes as checkpoints.\n\n";
+
+    // Standard workflow
+    system_prompt << "# Standard Workflow\n";
+    system_prompt << "For any coding task, follow this sequence:\n";
+    system_prompt << "  1. Understand: read_file and search_code to understand existing code\n";
+    system_prompt << "  2. Plan: task_planner to decompose if complex\n";
+    system_prompt << "  3. Edit: edit_file (preferred) or write_file to make changes\n";
+    system_prompt << "  4. Verify: build_and_test to compile and run tests\n";
+    system_prompt << "  5. Fix: if verification fails, read errors, fix code, go to step 4\n";
+    system_prompt << "  6. Commit: run_command with git add + git commit when tests pass\n";
+    system_prompt << "  7. Next: mark step done in task_planner, proceed to next step\n\n";
+
+    // Tool usage guidelines
+    system_prompt << "# Tool Guidelines\n";
+    system_prompt << "- read_file: Read a file by relative path (e.g., src/main.cpp). Always read before editing.\n";
+    system_prompt << "- list_dir: List directory contents. Use to discover project structure.\n";
+    system_prompt << "- search_code: Find text in files across the workspace.\n";
+    system_prompt << "- edit_file: Modify existing files using exact text replacement.\n";
+    system_prompt << "  Format: path=<file> then old<<<exact old text>>> new<<<replacement>>>\n";
+    system_prompt << "- write_file: Create new files.\n";
+    system_prompt << "  Format: path=<file> then content<<<file content>>>\n";
+    system_prompt << "- build_and_test: Compile the project and run tests. Use after every code change.\n";
+    system_prompt << "- run_command: Execute shell commands (git, build tools, etc.).\n";
+    system_prompt << "- task_planner: Create and track multi-step plans.\n";
+    system_prompt << "  Commands: plan:<steps>, done:<step_number>, status\n";
+    system_prompt << "- calculator: Evaluate arithmetic expressions.\n\n";
+
+    // Error handling
+    system_prompt << "# Error Handling\n";
+    system_prompt << "- If a tool returns an error, analyze the error message carefully.\n";
+    system_prompt << "- For compilation errors: read the file at the error line, understand the issue, fix it.\n";
+    system_prompt << "- For test failures: read the failing test to understand what it expects.\n";
+    system_prompt << "- Never skip verification. Never assume code works without testing.\n";
+    system_prompt << "- If stuck after 3 attempts, explain the issue and ask the user for guidance.\n\n";
+
+    // Output style
+    system_prompt << "# Communication\n";
+    system_prompt << "- Be concise. Lead with the action or answer, not the reasoning.\n";
+    system_prompt << "- When you complete a task, summarize what you did and the verification result.\n";
+    system_prompt << "- If multiple tool calls are needed, make them all in one turn when possible.\n";
+
     messages.push_back({ChatRole::system, system_prompt.str()});
 
     // Convert history
@@ -449,7 +521,7 @@ std::vector<ChatMessage> Agent::build_chat_messages() const {
         }
     }
 
-    return messages;
+    return prompt_compressor_.compress(raw_messages);
 }
 
 std::vector<ToolSchema> Agent::build_tool_schemas() const {
@@ -460,7 +532,8 @@ std::vector<ToolSchema> Agent::build_tool_schemas() const {
     return schemas;
 }
 
-std::string Agent::run_turn_structured(const std::string& user_input) {
+std::string Agent::run_turn_structured(const std::string& user_input,
+                                       StreamCallback on_token) {
     last_execution_trace_.clear();
     notify_trace_updated();
     push_history({"user", user_input, ""});
@@ -475,7 +548,8 @@ std::string Agent::run_turn_structured(const std::string& user_input) {
         [this](const Action& action, const PolicyDecision& decision, const Tool& tool) {
             return request_approval(action, decision, tool);
         },
-        [](const Action& action) { return audit_target_for_action(action); });
+        [](const Action& action) { return audit_target_for_action(action); },
+        &thread_pool_);
 
     for (int step = 0; step < runtime_config_.max_model_steps; ++step) {
         const std::vector<ChatMessage> messages = build_chat_messages();
@@ -484,7 +558,22 @@ std::string Agent::run_turn_structured(const std::string& user_input) {
         log_debug("Structured Chat", "messages=" + std::to_string(messages.size()) +
                   " tools=" + std::to_string(schemas.size()));
 
-        const ChatMessage response = client_->chat(messages, schemas);
+        // Use streaming if callback provided and client supports it
+        ChatMessage response;
+        if (on_token && client_->supports_streaming()) {
+            std::string accumulated;
+            response = client_->chat_streaming(messages, schemas,
+                [this, &on_token, &accumulated](const std::string& token) -> bool {
+                    accumulated += token;
+                    // Speculative prefetch: analyze partial tokens for file paths
+                    prefetch_cache_.on_streaming_token(accumulated, workspace_root_);
+                    // Forward token to caller (SSE passthrough)
+                    if (on_token) on_token(token);
+                    return true;
+                });
+        } else {
+            response = client_->chat(messages, schemas);
+        }
         log_debug("Model Response", "content=" + response.content +
                   " tool_calls=" + std::to_string(response.tool_calls.size()));
 
@@ -503,7 +592,8 @@ std::string Agent::run_turn_structured(const std::string& user_input) {
         // Store as a special history entry
         push_history(std::move(assistant_msg));
 
-        // Execute each tool call
+        // Build actions for ALL tool calls in this response
+        std::vector<Action> actions;
         for (const auto& tool_call : response.tool_calls) {
             Action action;
             action.type = ActionType::tool;
@@ -512,23 +602,43 @@ std::string Agent::run_turn_structured(const std::string& user_input) {
             action.risk = "low";
             action.requires_confirmation = false;
 
-            // Parse structured arguments back to the string format tools expect
+            // Parse structured arguments back to the string format tools expect.
+            // Models may send {"args": "value"} or {"path": "value"} etc.
+            // Simple tools (read_file, list_dir) expect bare string args.
+            // Complex tools (edit_file, write_file) expect key=value format.
             try {
                 auto j = nlohmann::json::parse(tool_call.arguments);
                 if (j.contains("args")) {
+                    // Explicit "args" field — use as-is
                     action.args = j["args"].get<std::string>();
+                } else if (j.size() == 1 && j.begin()->is_string()) {
+                    // Single string parameter (e.g. {"path": "src/main.cpp"})
+                    // For simple tools, just use the value directly
+                    action.args = j.begin()->get<std::string>();
                 } else {
-                    // For tools that use structured params, serialize as key=value lines
+                    // Multiple parameters — serialize as key=value lines.
+                    // IMPORTANT: "path" must come first for write_file/edit_file.
                     std::ostringstream args_str;
+
+                    // Emit "path" first if present
+                    if (j.contains("path") && j["path"].is_string()) {
+                        args_str << "path=" << j["path"].get<std::string>() << "\n";
+                    }
+
+                    // Emit remaining params, using content<<< >>> for file content
                     for (auto it = j.begin(); it != j.end(); ++it) {
-                        if (it->is_string()) {
+                        if (it.key() == "path") continue;  // already emitted
+
+                        if (it.key() == "content" && it->is_string()) {
+                            // Use the content<<< >>> format for write_file
+                            args_str << "content<<<\n" << it->get<std::string>() << "\n>>>\n";
+                        } else if (it->is_string()) {
                             args_str << it.key() << "=" << it->get<std::string>() << "\n";
                         } else {
                             args_str << it.key() << "=" << it->dump() << "\n";
                         }
                     }
                     action.args = args_str.str();
-                    // Trim trailing newline
                     if (!action.args.empty() && action.args.back() == '\n') {
                         action.args.pop_back();
                     }
@@ -536,44 +646,63 @@ std::string Agent::run_turn_structured(const std::string& user_input) {
             } catch (...) {
                 action.args = tool_call.arguments;
             }
+            actions.push_back(std::move(action));
+        }
 
+        // Mark all steps as planned in trace
+        const std::size_t trace_base = last_execution_trace_.size();
+        for (std::size_t i = 0; i < actions.size(); ++i) {
             ExecutionStep active_step;
-            active_step.index = last_execution_trace_.size() + 1;
-            active_step.tool_name = action.tool_name;
-            active_step.args = action.args;
-            active_step.reason = action.reason;
-            active_step.risk = action.risk;
+            active_step.index = trace_base + i + 1;
+            active_step.tool_name = actions[i].tool_name;
+            active_step.args = actions[i].args;
+            active_step.reason = actions[i].reason;
+            active_step.risk = actions[i].risk;
             active_step.status = ExecutionStepStatus::planned;
             active_step.detail = "Pending execution";
             last_execution_trace_.push_back(active_step);
-            notify_trace_updated();
+        }
+        notify_trace_updated();
 
-            const TaskStepResult step_result = task_runner.execute(action, active_step.index);
-            last_execution_trace_.back() = step_result.step;
+        // Execute ALL tool calls in parallel via execute_batch()
+        // (read-only tools run concurrently, write tools run sequentially)
+        const std::vector<TaskStepResult> results =
+            task_runner.execute_batch(actions, trace_base + 1);
+
+        // Process results and update history
+        bool should_return = false;
+        std::string early_reply;
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            last_execution_trace_[trace_base + i] = results[i].step;
             notify_trace_updated();
 
             std::string history_content;
-            std::string history_name = action.tool_name;
-            if (step_result.observation.channel == "tool") {
+            std::string history_name = actions[i].tool_name;
+            if (results[i].observation.channel == "tool") {
                 history_content =
-                    std::string(step_result.observation.success ? "TOOL_OK\n" : "TOOL_ERROR\n") +
-                    step_result.observation.content;
-            } else if (step_result.observation.channel == "policy") {
-                history_content = "POLICY_DENY\n" + step_result.observation.content;
+                    std::string(results[i].observation.success ? "TOOL_OK\n" : "TOOL_ERROR\n") +
+                    results[i].observation.content;
+            } else if (results[i].observation.channel == "policy") {
+                history_content = "POLICY_DENY\n" + results[i].observation.content;
                 history_name = "policy";
-            } else if (step_result.observation.channel == "approval") {
-                history_content = "APPROVAL_DENY\n" + step_result.observation.content;
+            } else if (results[i].observation.channel == "approval") {
+                history_content = "APPROVAL_DENY\n" + results[i].observation.content;
                 history_name = "approval";
             } else {
-                history_content = step_result.observation.content;
+                history_content = results[i].observation.content;
             }
 
             push_history({"tool", history_content, history_name});
 
-            if (step_result.should_return_reply) {
-                push_history({"assistant", step_result.reply, ""});
-                return step_result.reply;
+            if (results[i].should_return_reply && !should_return) {
+                should_return = true;
+                early_reply = results[i].reply;
             }
+        }
+
+        if (should_return) {
+            push_history({"assistant", early_reply, ""});
+            return early_reply;
         }
     }
 

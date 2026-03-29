@@ -9,19 +9,18 @@ void ToolRegistry::register_tool(std::unique_ptr<Tool> tool) {
     }
 
     const std::string tool_name = tool->name();
-    if (find(tool_name) != nullptr) {
+    if (index_.count(tool_name) > 0) {
         throw std::invalid_argument("Tool already registered: " + tool_name);
     }
 
+    Tool* raw = tool.get();
     tools_.push_back(std::move(tool));
+    index_.emplace(tool_name, raw);
 }
 
 const Tool* ToolRegistry::find(const std::string& name) const {
-    auto it = std::find_if(tools_.begin(), tools_.end(),
-                           [&name](const std::unique_ptr<Tool>& tool) {
-                               return tool->name() == name;
-                           });
-    return it == tools_.end() ? nullptr : it->get();
+    const auto it = index_.find(name);
+    return it == index_.end() ? nullptr : it->second;
 }
 
 std::vector<const Tool*> ToolRegistry::list() const {

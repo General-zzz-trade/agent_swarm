@@ -9,6 +9,7 @@ enum class TopLevelCommandType {
     train_demo,
     agent,
     web_chat,
+    bench,
     invalid,
 };
 
