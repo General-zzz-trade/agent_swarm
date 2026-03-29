@@ -128,3 +128,7 @@ add_test(NAME agent_integration_tests COMMAND agent_integration_tests)
 add_executable(capability_tests tests/capability_tests.cpp)
 target_link_libraries(capability_tests PRIVATE bolt_core)
 add_test(NAME capability_tests COMMAND capability_tests)
+
+add_executable(e2e_tests tests/e2e_tests.cpp)
+target_link_libraries(e2e_tests PRIVATE bolt_core)
+add_test(NAME e2e_tests COMMAND e2e_tests)

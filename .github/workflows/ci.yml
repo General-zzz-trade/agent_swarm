@@ -37,6 +37,9 @@ jobs:
         run: ./build/capability_tests.exe
         timeout-minutes: 2
 
+      - name: Run e2e tests
+        run: ./build/e2e_tests.exe
+
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
@@ -66,6 +69,9 @@ jobs:
       - name: Run capability tests
         run: ./build/capability_tests
         timeout-minutes: 2
+
+      - name: Run e2e tests
+        run: ./build/e2e_tests
 
   sanitizer-linux:
     runs-on: ubuntu-latest
@@ -97,6 +103,11 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
 
+      - name: Run e2e tests
+        run: ./build/e2e_tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+
   build-macos:
     runs-on: macos-latest
     steps:
@@ -117,3 +128,6 @@ jobs:
       - name: Run capability tests
         run: ./build/capability_tests
         timeout-minutes: 2
+
+      - name: Run e2e tests
+        run: ./build/e2e_tests

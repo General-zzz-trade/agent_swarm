@@ -57,13 +57,15 @@ jobs:
           ./build/kernel_tests.exe
           ./build/agent_integration_tests.exe
           ./build/capability_tests.exe
+          ./build/e2e_tests.exe
 
       - name: Run tests (Unix)
         if: runner.os != 'Windows'
         run: |
           ./build/kernel_tests
+          ./build/agent_integration_tests
           ./build/capability_tests
-        continue-on-error: true
+          ./build/e2e_tests
 
       - name: Package binary
         run: |
@@ -75,3 +77,25 @@ jobs:
           files: bolt-${{ matrix.name }}${{ matrix.ext }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  npm-publish:
+    needs: [build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update package version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd npm
+          node -e "const p=require('./package.json'); p.version='${VERSION}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+
+      - name: Publish to npm
+        run: cd npm && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
