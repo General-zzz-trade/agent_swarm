@@ -34,8 +34,10 @@
 #include "../src/app/web_chat_cli_options.h"
 #include "../src/core/interfaces/audit_logger.h"
 #include "../src/platform/platform_agent_factory.h"
+#ifdef _WIN32
 #include "../src/platform/windows/ollama_json_utils.h"
 #include "../src/platform/windows/windows_agent_factory.h"
+#endif
 
 namespace {
 
@@ -461,6 +463,7 @@ void expect_policy_config_can_reclassify_tool_bucket() {
                  "Reclassified command-like tool should be treated as medium risk");
 }
 
+#ifdef _WIN32
 void expect_ollama_json_escape_preserves_control_chars() {
     const std::string escaped =
         ollama_json::escape_json_string("say \"hi\"\nnext\tline\\done");
@@ -495,6 +498,7 @@ void expect_ollama_json_rejects_invalid_json() {
     }
     expect_true(threw, "Invalid top-level JSON should throw");
 }
+#endif  // _WIN32
 
 void expect_app_config_reads_workspace_file() {
     ScopedTempDir temp_dir;
@@ -1686,8 +1690,8 @@ void expect_agent_requires_tool_registry() {
     expect_true(threw, "Agent should reject missing tool registries");
 }
 
-void expect_windows_agent_factory_uses_resolved_options() {
 #ifdef _WIN32
+void expect_windows_agent_factory_uses_resolved_options() {
     ScopedTempDir temp_dir;
     AppConfig config;
     config.default_model = "cfg:model";
@@ -1707,10 +1711,8 @@ void expect_windows_agent_factory_uses_resolved_options() {
                  "Windows agent factory should use resolved CLI model");
     expect_equal(agent->debug_enabled(), true,
                  "Windows agent factory should use resolved CLI debug flag");
-#else
-    throw std::runtime_error("Windows-only test should not run on non-Windows");
-#endif
 }
+#endif  // _WIN32
 
 void expect_platform_agent_factory_reports_platform_name() {
 #ifdef _WIN32
@@ -1789,12 +1791,14 @@ int main() {
          expect_policy_config_can_disable_high_risk_block},
         {"policy config can reclassify tool bucket",
          expect_policy_config_can_reclassify_tool_bucket},
+#ifdef _WIN32
         {"ollama json escapes control chars", expect_ollama_json_escape_preserves_control_chars},
         {"ollama json extracts top-level string", expect_ollama_json_extracts_top_level_string},
         {"ollama json handles escaped strings", expect_ollama_json_handles_escaped_strings},
         {"ollama json returns empty for non-string field",
          expect_ollama_json_returns_empty_for_non_string_field},
         {"ollama json rejects invalid json", expect_ollama_json_rejects_invalid_json},
+#endif
         {"app config reads workspace file", expect_app_config_reads_workspace_file},
         {"edit_file exact replace updates file", expect_edit_file_exact_replace_updates_file},
         {"edit_file line patch updates file", expect_edit_file_line_patch_updates_file},
@@ -1873,8 +1877,10 @@ int main() {
          expect_platform_agent_factory_reports_platform_name},
         {"platform agent factory uses current platform",
          expect_platform_agent_factory_uses_current_platform},
+#ifdef _WIN32
         {"windows agent factory uses resolved options",
          expect_windows_agent_factory_uses_resolved_options},
+#endif
     };
 
     std::size_t passed = 0;

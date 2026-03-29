@@ -190,6 +190,7 @@ add_executable(agent_integration_tests
         src/core/routing/model_router.cpp
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
+        src/core/net/sse_parser.cpp
         src/agent/action_parser.cpp
         src/agent/agent.cpp
         src/agent/build_and_test_tool.cpp
@@ -225,8 +226,42 @@ add_executable(agent_integration_tests
         src/app/static_approval_provider.cpp
         src/app/terminal_approval_provider.cpp
         src/app/web_chat_cli_options.cpp
-        src/platform/windows/ollama_json_utils.cpp
+        src/platform/platform_agent_factory.cpp
 )
+
+if (WIN32)
+    target_sources(agent_integration_tests PRIVATE
+        src/platform/windows/ollama_json_utils.cpp
+        src/platform/windows/windows_agent_factory.cpp
+        src/platform/windows/winhttp_transport.cpp
+        src/platform/windows/windows_command_runner.cpp
+        src/platform/windows/windows_file_system.cpp
+        src/platform/windows/windows_process_manager.cpp
+        src/platform/windows/windows_ui_automation.cpp
+        src/platform/windows/windows_window_controller.cpp
+        src/platform/windows/windows_ollama_model_client.cpp
+        src/providers/openai_client.cpp
+        src/providers/claude_client.cpp
+        src/providers/gemini_client.cpp
+        src/providers/ollama_chat_client.cpp
+        src/app/model_client_factory.cpp
+    )
+    target_link_libraries(agent_integration_tests PRIVATE user32 winhttp)
+elseif (UNIX)
+    target_sources(agent_integration_tests PRIVATE
+        src/platform/linux/linux_agent_factory.cpp
+        src/platform/linux/linux_file_system.cpp
+        src/platform/linux/linux_command_runner.cpp
+        src/platform/linux/linux_process_manager.cpp
+        src/platform/linux/linux_http_transport.cpp
+        src/providers/openai_client.cpp
+        src/providers/claude_client.cpp
+        src/providers/gemini_client.cpp
+        src/providers/ollama_chat_client.cpp
+        src/app/model_client_factory.cpp
+    )
+    target_link_libraries(agent_integration_tests PRIVATE pthread)
+endif()
 
 add_test(NAME agent_integration_tests COMMAND agent_integration_tests)
 
