@@ -49,4 +49,4 @@ bolt agent "Refactor the authentication module"
 
 ## More info
 
-GitHub: https://github.com/General-zzz-trade/bolt
+GitHub: https://github.com/General-zzz-trade/Bolt

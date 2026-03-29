@@ -14,7 +14,7 @@ const path = require("path");
 const os = require("os");
 const { execSync } = require("child_process");
 
-const REPO = "General-zzz-trade/agent_swarm";
+const REPO = "General-zzz-trade/Bolt";
 const VERSION = require("./package.json").version;
 
 function getPlatformKey() {
@@ -92,14 +92,18 @@ async function main() {
     }
     console.log(`bolt installed successfully at ${binPath}`);
   } catch (err) {
-    console.error(`\nFailed to download pre-built binary: ${err.message}`);
-    console.error("\nAlternatives:");
-    console.error("  1. Build from source: git clone && cmake -B build && cmake --build build");
-    console.error(`  2. Download manually: https://github.com/${REPO}/releases`);
-    console.error("  3. Check if a release exists for v" + VERSION);
+    // Clean up partial download
+    try { fs.unlinkSync(binPath); } catch (_) {}
 
-    // Don't fail the install — user can still build from source
-    // and manually place the binary in node_modules/bolt-cpp/bin/
+    console.error(`\nFailed to download pre-built binary: ${err.message}`);
+    console.error(`\nThe pre-built binary for v${VERSION} (${os.platform()}-${os.arch()}) was not found.`);
+    console.error("\nTo use bolt, build from source:");
+    console.error(`  git clone https://github.com/${REPO}.git && cd Bolt`);
+    console.error("  cmake -B build -S . && cmake --build build -j8");
+    console.error(`  cp build/bolt${os.platform() === "win32" ? ".exe" : ""} ${binDir}/`);
+    console.error(`\nOr download manually: https://github.com/${REPO}/releases`);
+
+    // Don't fail npm install — user can place binary manually
     process.exit(0);
   }
 }

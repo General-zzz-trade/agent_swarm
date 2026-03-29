@@ -13,7 +13,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 ### Build
 
 ```bash
-git clone https://github.com/General-zzz-trade/bolt.git
+git clone https://github.com/General-zzz-trade/Bolt.git
 cd bolt
 cmake -B build -S .
 cmake --build build -j8

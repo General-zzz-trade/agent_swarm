@@ -16,14 +16,14 @@
     "native",
     "fast"
   ],
-  "homepage": "https://github.com/General-zzz-trade/agent_swarm",
+  "homepage": "https://github.com/General-zzz-trade/Bolt",
   "repository": {
     "type": "git",
-    "url": "https://github.com/General-zzz-trade/agent_swarm.git"
+    "url": "https://github.com/General-zzz-trade/Bolt.git"
   },
   "license": "MIT",
   "bin": {
-    "bolt": "bin/agent-swarm.js"
+    "bolt": "bin/bolt.js"
   },
   "scripts": {
     "postinstall": "node install.js"

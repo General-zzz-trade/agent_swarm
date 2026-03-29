@@ -13,35 +13,57 @@ jobs:
           - os: windows-latest
             name: windows-x64
             ext: .exe
-          # - os: ubuntu-latest
-          #   name: linux-x64
-          #   ext: ""
-          # - os: macos-latest
-          #   name: macos-arm64
-          #   ext: ""
+          - os: ubuntu-latest
+            name: linux-x64
+            ext: ""
+          - os: macos-latest
+            name: macos-arm64
+            ext: ""
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake make
+
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: cmake -B build -S . -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure CMake (Unix)
         if: runner.os != 'Windows'
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
-        run: cmake --build build -j4 --config Release
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: cmake --build build -j4
+
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: cmake --build build -j4
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: |
           ./build/kernel_tests.exe
           ./build/agent_integration_tests.exe
           ./build/capability_tests.exe
+
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./build/kernel_tests
+          ./build/capability_tests
+        continue-on-error: true
 
       - name: Package binary
         run: |
