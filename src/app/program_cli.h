@@ -10,6 +10,7 @@ enum class TopLevelCommandType {
     agent,
     web_chat,
     bench,
+    mcp_server,
     invalid,
 };
 

@@ -15,6 +15,8 @@ add_executable(bolt
         src/core/routing/model_router.cpp
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
+        src/core/session/session_store.cpp
+        src/core/mcp/mcp_server.cpp
         src/core/net/sse_parser.cpp
         src/app/app_config.cpp
         src/app/agent_factory.cpp
@@ -48,6 +50,7 @@ add_executable(bolt
         src/agent/list_windows_tool.cpp
         src/agent/open_app_tool.cpp
         src/agent/permission_policy.cpp
+        src/agent/plugin_tool.cpp
         src/agent/read_file_tool.cpp
         src/agent/run_command_tool.cpp
         src/agent/search_code_tool.cpp
@@ -105,6 +108,8 @@ add_executable(kernel_tests
         src/core/routing/model_router.cpp
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
+        src/core/session/session_store.cpp
+        src/core/mcp/mcp_server.cpp
         src/core/net/sse_parser.cpp
         src/agent/action_parser.cpp
         src/agent/agent.cpp
@@ -120,6 +125,7 @@ add_executable(kernel_tests
         src/agent/list_windows_tool.cpp
         src/agent/open_app_tool.cpp
         src/agent/permission_policy.cpp
+        src/agent/plugin_tool.cpp
         src/agent/read_file_tool.cpp
         src/agent/run_command_tool.cpp
         src/agent/search_code_tool.cpp
@@ -190,6 +196,8 @@ add_executable(agent_integration_tests
         src/core/routing/model_router.cpp
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
+        src/core/session/session_store.cpp
+        src/core/mcp/mcp_server.cpp
         src/core/net/sse_parser.cpp
         src/agent/action_parser.cpp
         src/agent/agent.cpp
@@ -205,6 +213,7 @@ add_executable(agent_integration_tests
         src/agent/list_windows_tool.cpp
         src/agent/open_app_tool.cpp
         src/agent/permission_policy.cpp
+        src/agent/plugin_tool.cpp
         src/agent/read_file_tool.cpp
         src/agent/run_command_tool.cpp
         src/agent/search_code_tool.cpp
@@ -273,6 +282,8 @@ add_executable(capability_tests
         src/core/routing/model_router.cpp
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
+        src/core/session/session_store.cpp
+        src/core/mcp/mcp_server.cpp
         src/core/net/sse_parser.cpp
         src/agent/action_parser.cpp
         src/agent/agent.cpp
@@ -288,6 +299,7 @@ add_executable(capability_tests
         src/agent/list_windows_tool.cpp
         src/agent/open_app_tool.cpp
         src/agent/permission_policy.cpp
+        src/agent/plugin_tool.cpp
         src/agent/read_file_tool.cpp
         src/agent/run_command_tool.cpp
         src/agent/search_code_tool.cpp

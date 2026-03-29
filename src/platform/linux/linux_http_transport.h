@@ -30,6 +30,8 @@ private:
     static ParsedUrl parse_url(const std::string& url);
     HttpResponse execute_request(const HttpRequest& request,
                                  std::function<bool(const std::string& chunk)>* on_chunk);
+    HttpResponse execute_via_curl(const HttpRequest& request,
+                                  std::function<bool(const std::string& chunk)>* on_chunk);
 
     // Simple connection cache
     std::mutex mutex_;

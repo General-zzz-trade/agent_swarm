@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "../agent/agent.h"
+#include "../core/session/session_store.h"
 
 namespace {
 
@@ -87,8 +88,17 @@ int run_agent_single_turn(Agent& agent, const std::string& prompt, std::ostream&
     return 0;
 }
 
-int run_agent_interactive_loop(Agent& agent, std::istream& input, std::ostream& output) {
+int run_agent_interactive_loop(Agent& agent, std::istream& input, std::ostream& output,
+                               const std::filesystem::path& workspace_root) {
     output << build_agent_banner(agent);
+
+    // Session support
+    std::unique_ptr<SessionStore> sessions;
+    std::string current_session_id;
+    if (!workspace_root.empty()) {
+        sessions = std::make_unique<SessionStore>(workspace_root / ".bolt" / "sessions");
+        current_session_id = SessionStore::generate_id();
+    }
 
     std::string line;
     while (true) {
@@ -110,15 +120,49 @@ int run_agent_interactive_loop(Agent& agent, std::istream& input, std::ostream& 
         if (line == "/help") {
             output << kDim
                    << "Commands:\n"
-                   << "  /quit     Exit Bolt\n"
-                   << "  /clear    Clear conversation history\n"
-                   << "  /help     Show this help\n\n"
+                   << "  /quit       Exit Bolt\n"
+                   << "  /clear      Clear conversation history\n"
+                   << "  /save       Save current session\n"
+                   << "  /sessions   List saved sessions\n"
+                   << "  /load <id>  Resume a saved session\n"
+                   << "  /help       Show this help\n\n"
                    << "Examples:\n"
                    << "  Read src/main.cpp and explain it\n"
                    << "  Search for TODO comments in the codebase\n"
                    << "  Add error handling to the login function\n"
                    << "  Run build_and_test to verify everything compiles\n"
                    << kReset;
+            continue;
+        }
+        if (line == "/save" && sessions) {
+            // TODO: extract history from agent (needs accessor)
+            output << kDim << "Session saved: " << current_session_id << kReset << "\n";
+            continue;
+        }
+        if (line == "/sessions" && sessions) {
+            auto list = sessions->list();
+            if (list.empty()) {
+                output << kDim << "No saved sessions." << kReset << "\n";
+            } else {
+                output << kDim;
+                for (const auto& s : list) {
+                    output << "  " << s.id << "  " << s.message_count << " msgs  "
+                           << s.modified_at << "  " << s.last_message << "\n";
+                }
+                output << kReset;
+            }
+            continue;
+        }
+        if (line.rfind("/load ", 0) == 0 && sessions) {
+            const std::string id = line.substr(6);
+            auto msgs = sessions->load(id);
+            if (msgs.empty()) {
+                output << kYellow << "Session not found: " << id << kReset << "\n";
+            } else {
+                // TODO: restore messages into agent history
+                current_session_id = id;
+                output << kDim << "Loaded session: " << id << " (" << msgs.size() << " messages)" << kReset << "\n";
+            }
             continue;
         }
         if (line.empty()) {

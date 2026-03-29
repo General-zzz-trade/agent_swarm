@@ -1,14 +1,15 @@
 #include "linux_http_transport.h"
 
+#include <array>
 #include <arpa/inet.h>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <netdb.h>
 #include <sstream>
 #include <sys/socket.h>
 #include <unistd.h>
 
-// MSG_NOSIGNAL doesn't exist on macOS; use SO_NOSIGPIPE instead
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
 #endif
@@ -115,12 +116,8 @@ HttpResponse LinuxHttpTransport::execute_request(
     const ParsedUrl parsed = parse_url(request.url);
 
     if (parsed.secure) {
-        // HTTPS requires OpenSSL — not yet implemented
-        // For local Ollama (HTTP), this works fine
-        HttpResponse resp;
-        resp.error = "HTTPS not yet supported on Linux (use HTTP for local models). "
-                     "Set ollama.host=localhost and provider=ollama-chat in config.";
-        return resp;
+        // HTTPS: delegate to system curl (avoids OpenSSL compile dependency)
+        return execute_via_curl(request, on_chunk);
     }
 
     const int timeout = request.timeout_ms > 0 ? request.timeout_ms : 60000;
@@ -202,5 +199,143 @@ HttpResponse LinuxHttpTransport::execute_request(
         response.body = raw_response.substr(header_end + 4);
     }
 
+    return response;
+}
+
+HttpResponse LinuxHttpTransport::execute_via_curl(
+    const HttpRequest& request,
+    std::function<bool(const std::string& chunk)>* on_chunk) {
+
+    // Build curl command
+    const std::string method = request.method.empty() ? "POST" : request.method;
+    std::ostringstream cmd;
+    cmd << "curl -sS -X " << method;
+    cmd << " --max-time " << (request.timeout_ms > 0 ? request.timeout_ms / 1000 : 60);
+
+    // Headers
+    for (const auto& [key, value] : request.headers) {
+        cmd << " -H '" << key << ": " << value << "'";
+    }
+
+    // Body via stdin to avoid shell escaping issues
+    if (!request.body.empty()) {
+        cmd << " -d @-";
+    }
+
+    // Include response headers for status code parsing
+    cmd << " -w '\\n__HTTP_STATUS__:%{http_code}'";
+    cmd << " '" << request.url << "'";
+
+    // For streaming, use -N (no buffer)
+    if (on_chunk) {
+        cmd << " --no-buffer";
+    }
+
+    FILE* pipe = popen(cmd.str().c_str(), request.body.empty() ? "r" : "r+");
+    if (!pipe) {
+        return {0, "", "Failed to launch curl for HTTPS request"};
+    }
+
+    // Write body to stdin if present
+    if (!request.body.empty()) {
+        // popen with "r+" isn't portable, use a temp approach:
+        // Close this pipe and reopen with body piped through echo
+        pclose(pipe);
+
+        // Use a temp file for the body
+        const std::string tmp = "/tmp/bolt_req_" + std::to_string(getpid()) + ".json";
+        {
+            FILE* f = fopen(tmp.c_str(), "w");
+            if (f) {
+                fwrite(request.body.data(), 1, request.body.size(), f);
+                fclose(f);
+            }
+        }
+
+        // Rebuild command with -d @tmpfile
+        std::ostringstream cmd2;
+        cmd2 << "curl -sS -X " << method;
+        cmd2 << " --max-time " << (request.timeout_ms > 0 ? request.timeout_ms / 1000 : 60);
+        for (const auto& [key, value] : request.headers) {
+            cmd2 << " -H '" << key << ": " << value << "'";
+        }
+        cmd2 << " -d @" << tmp;
+        cmd2 << " -w '\\n__HTTP_STATUS__:%{http_code}'";
+        if (on_chunk) cmd2 << " --no-buffer";
+        cmd2 << " '" << request.url << "'";
+
+        pipe = popen(cmd2.str().c_str(), "r");
+        if (!pipe) {
+            unlink(tmp.c_str());
+            return {0, "", "Failed to launch curl"};
+        }
+
+        // Read response
+        HttpResponse response;
+        std::string body;
+        std::array<char, 8192> buf;
+
+        while (true) {
+            const size_t n = fread(buf.data(), 1, buf.size(), pipe);
+            if (n == 0) break;
+            const std::string chunk(buf.data(), n);
+
+            if (on_chunk) {
+                // Check if this chunk contains the status line
+                const auto status_pos = chunk.find("__HTTP_STATUS__:");
+                if (status_pos != std::string::npos) {
+                    const std::string before = chunk.substr(0, status_pos);
+                    if (!before.empty()) (*on_chunk)(before);
+                    try {
+                        response.status_code = std::stoi(chunk.substr(status_pos + 16));
+                    } catch (...) {}
+                } else {
+                    if (!(*on_chunk)(chunk)) break;
+                }
+            }
+            body += chunk;
+        }
+
+        pclose(pipe);
+        unlink(tmp.c_str());
+
+        // Extract status code from body
+        const auto status_pos = body.rfind("__HTTP_STATUS__:");
+        if (status_pos != std::string::npos) {
+            try {
+                response.status_code = std::stoi(body.substr(status_pos + 16));
+            } catch (...) {}
+            body.resize(status_pos);
+            // Remove trailing newline before status
+            while (!body.empty() && body.back() == '\n') body.pop_back();
+        }
+
+        if (!on_chunk) {
+            response.body = body;
+        }
+        return response;
+    }
+
+    // No body case (GET requests)
+    HttpResponse response;
+    std::string body;
+    std::array<char, 8192> buf;
+    while (true) {
+        const size_t n = fread(buf.data(), 1, buf.size(), pipe);
+        if (n == 0) break;
+        body.append(buf.data(), n);
+    }
+    pclose(pipe);
+
+    const auto status_pos = body.rfind("__HTTP_STATUS__:");
+    if (status_pos != std::string::npos) {
+        try {
+            response.status_code = std::stoi(body.substr(status_pos + 16));
+        } catch (...) {}
+        body.resize(status_pos);
+        while (!body.empty() && body.back() == '\n') body.pop_back();
+    }
+
+    response.body = body;
     return response;
 }

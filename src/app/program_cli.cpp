@@ -21,6 +21,9 @@ TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) 
     if (command == "bench") {
         return {TopLevelCommandType::bench, command};
     }
+    if (command == "mcp-server" || command == "mcp") {
+        return {TopLevelCommandType::mcp_server, command};
+    }
     if (command == "--help" || command == "-h" || command == "help") {
         return {TopLevelCommandType::usage, command};
     }
@@ -36,6 +39,7 @@ std::string build_usage_text(const std::string& program_name) {
     output << "  " << program_name << " agent [prompt]            Ask a question or give a task\n";
     output << "  " << program_name << " web-chat [--port 8080]    Browser-based chat UI\n";
     output << "  " << program_name << " bench [--rounds 5]        Performance benchmark\n";
+    output << "  " << program_name << " mcp-server               MCP protocol server (stdin/stdout)\n";
     output << "  " << program_name << " --help                    Show this help\n\n";
     output << "Examples:\n";
     output << "  " << program_name << " agent \"Read src/main.cpp and explain it\"\n";
