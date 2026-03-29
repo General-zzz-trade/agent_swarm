@@ -80,7 +80,8 @@ if (WIN32)
         src/app/model_client_factory.cpp
     )
     target_link_libraries(mini_nn PRIVATE user32 winhttp ws2_32)
-elseif (UNIX AND NOT APPLE)
+elseif (UNIX)
+    # Linux and macOS share POSIX implementations
     target_sources(mini_nn PRIVATE
         src/platform/linux/linux_agent_factory.cpp
         src/platform/linux/linux_file_system.cpp
@@ -163,7 +164,7 @@ if (WIN32)
             src/app/model_client_factory.cpp
     )
     target_link_libraries(kernel_tests PRIVATE user32 winhttp)
-elseif (UNIX AND NOT APPLE)
+elseif (UNIX)
     target_sources(kernel_tests PRIVATE
         src/platform/linux/linux_agent_factory.cpp
         src/platform/linux/linux_file_system.cpp

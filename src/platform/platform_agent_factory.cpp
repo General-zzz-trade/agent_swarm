@@ -7,7 +7,7 @@
 
 #ifdef _WIN32
 #include "windows/windows_agent_factory.h"
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
 #include "linux/linux_agent_factory.h"
 #endif
 
@@ -29,7 +29,7 @@ AgentServices create_platform_agent_services(const AppConfig& config,
                                              std::ostream& output) {
 #ifdef _WIN32
     return create_windows_agent_services(config, options, input, output);
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
     return create_linux_agent_services(config, options, input, output);
 #else
     (void)config;
@@ -48,7 +48,7 @@ std::unique_ptr<Agent> create_platform_agent(const std::filesystem::path& worksp
                                              std::ostream& output) {
 #ifdef _WIN32
     return create_windows_agent(workspace_root, config, options, input, output);
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
     return create_linux_agent(workspace_root, config, options, input, output);
 #else
     (void)workspace_root;

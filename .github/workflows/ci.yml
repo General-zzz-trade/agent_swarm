@@ -9,32 +9,31 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
 
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake make
+          update: true
+          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake make
 
       - name: Configure CMake
-        shell: msys2 {0}
         run: cmake -B build -S . -G "MinGW Makefiles"
 
       - name: Build all targets
-        shell: msys2 {0}
         run: cmake --build build -j4
 
       - name: Run kernel tests
-        shell: msys2 {0}
         run: ./build/kernel_tests.exe
 
       - name: Run integration tests
-        shell: msys2 {0}
         run: ./build/agent_integration_tests.exe
 
       - name: Run capability tests
-        shell: msys2 {0}
         run: ./build/capability_tests.exe
         timeout-minutes: 2
 
@@ -43,6 +42,7 @@ jobs:
         with:
           name: agent-swarm-windows-x64
           path: build/mini_nn.exe
+        shell: pwsh
 
   build-linux:
     runs-on: ubuntu-latest

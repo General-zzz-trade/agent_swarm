@@ -1,5 +1,6 @@
 #include "linux_process_manager.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -11,6 +12,26 @@ ProcessListResult LinuxProcessManager::list_processes() const {
     ProcessListResult result;
     result.success = true;
 
+#ifdef __APPLE__
+    // macOS: use 'ps' command as fallback
+    FILE* pipe = popen("ps -eo pid,comm", "r");
+    if (!pipe) {
+        result.success = false;
+        result.error = "Cannot run ps";
+        return result;
+    }
+    char line[256];
+    fgets(line, sizeof(line), pipe);  // Skip header
+    while (fgets(line, sizeof(line), pipe)) {
+        unsigned long pid = 0;
+        char name[256] = {};
+        if (sscanf(line, "%lu %255s", &pid, name) == 2) {
+            result.processes.push_back({pid, name});
+        }
+    }
+    pclose(pipe);
+#else
+    // Linux: read /proc directly
     DIR* proc_dir = opendir("/proc");
     if (!proc_dir) {
         result.success = false;
@@ -20,7 +41,6 @@ ProcessListResult LinuxProcessManager::list_processes() const {
 
     struct dirent* entry;
     while ((entry = readdir(proc_dir)) != nullptr) {
-        // Only numeric directories (PIDs)
         bool is_pid = true;
         for (const char* c = entry->d_name; *c; ++c) {
             if (*c < '0' || *c > '9') { is_pid = false; break; }
@@ -28,8 +48,6 @@ ProcessListResult LinuxProcessManager::list_processes() const {
         if (!is_pid) continue;
 
         const unsigned long pid = std::strtoul(entry->d_name, nullptr, 10);
-
-        // Read /proc/<pid>/comm for process name
         std::ifstream comm_file("/proc/" + std::string(entry->d_name) + "/comm");
         std::string name;
         if (comm_file && std::getline(comm_file, name)) {
@@ -37,6 +55,8 @@ ProcessListResult LinuxProcessManager::list_processes() const {
         }
     }
     closedir(proc_dir);
+#endif
+
     return result;
 }
 

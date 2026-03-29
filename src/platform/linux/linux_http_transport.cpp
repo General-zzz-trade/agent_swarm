@@ -8,6 +8,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// MSG_NOSIGNAL doesn't exist on macOS; use SO_NOSIGPIPE instead
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 namespace {
 
 int connect_to_host(const std::string& host, int port, int timeout_ms) {
