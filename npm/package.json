@@ -1,6 +1,6 @@
 {
   "name": "bolt-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Blazing-fast autonomous coding agent written in C++. Single binary, zero dependencies, 0.1ms framework overhead.",
   "keywords": [
     "ai",

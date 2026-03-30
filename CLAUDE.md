@@ -52,10 +52,10 @@ All tests must pass before PR. Run all:
 ## Interactive Commands
 
 ```
-Session:    /save [name]  /load <id>  /sessions  /delete <id>  /export [file]
+Session:    /save [name]  /load <id>  /sessions  /delete <id>  /export [file]  /memory
 Context:    /clear  /compact  /undo  /reset
 Display:    /model  /cost  /status  /debug  /diff
-System:     /quit  /help
+System:     /quit  /help  /sandbox  /plugins
 
 Shortcuts:  Ctrl+C cancel  Ctrl+L clear  Ctrl+D exit  ↑/↓ history  Tab complete
 File ref:   @file or @file:10-20 to include file contents in prompt
@@ -65,7 +65,9 @@ File ref:   @file or @file:10-20 to include file contents in prompt
 
 ```
 src/
-  agent/        # Tools (21 built-in) and agent loop
+  agent/        # Tools (25 built-in + plugins) and agent loop
+    speculative_executor  # Predictive tool execution during LLM streaming
+    plugin_loader         # External plugin discovery and loading
   app/          # CLI, config, factories, runners, terminal UI
     terminal_renderer   # Markdown rendering, diff display, status bar
     terminal_input      # Readline-like input with tab completion
@@ -81,7 +83,7 @@ src/
     model/      # Chat message, tool schema, token usage types
     net/        # SSE parser
     routing/    # Model router, prompt compressor
-    session/    # Session persistence
+    session/    # Session persistence, persistent memory
     threading/  # Thread pool
   platform/
     linux/      # Linux implementations (libcurl, fork/exec, /proc)
@@ -132,3 +134,8 @@ npm/            # npm package (bolt-agent)
 - Token usage is parsed per-provider: Claude `usage`, OpenAI `usage`, Gemini `usageMetadata`, Ollama `eval_count`
 - `SandboxedCommandRunner` wraps `LinuxCommandRunner` with bubblewrap (`bwrap`) for OS-level isolation; falls back to unsandboxed if bwrap is not installed
 - Sandbox config keys live under `sandbox.*` in bolt.conf; env overrides are `BOLT_SANDBOX_ENABLED` and `BOLT_SANDBOX_NETWORK`
+- Plugins live in `.bolt/plugins/` (workspace) or `~/.bolt/plugins/` (global), each with a `plugin.json` manifest
+- Plugin tools execute as subprocesses: JSON args via stdin, result via stdout; they inherit sandbox restrictions
+- `SpeculativeExecutor` runs read-only tools during streaming; only safe (read-only) tools are speculated, never write tools
+- `MemoryStore` persists cross-session facts to `~/.bolt/memory.json` (global) and `.bolt/memory.json` (workspace)
+- Auto-verify runs `build_and_test` after code edits; max 3 retries; disable with `agent.auto_verify=false`
