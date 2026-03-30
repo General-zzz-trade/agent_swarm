@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -375,6 +376,102 @@ int main(int argc, char* argv[]) {
             case TopLevelCommandType::usage:
                 print_usage(argv[0]);
                 return 0;
+            case TopLevelCommandType::version:
+                std::cout << "bolt 0.5.0\n";
+                return 0;
+            case TopLevelCommandType::doctor: {
+                const auto ws = std::filesystem::current_path();
+                std::cout << "\n\033[1;36m⚡ Bolt Doctor\033[0m\n\n";
+
+                // Version
+                std::cout << "  Version:      0.5.0\n";
+                std::cout << "  Workspace:    " << ws.string() << "\n";
+
+                // Config
+                auto config_path = ws / "bolt.conf";
+                std::cout << "  Config:       " << (std::filesystem::exists(config_path) ? "\033[32m✓ bolt.conf\033[0m" : "\033[2mno bolt.conf\033[0m") << "\n";
+                auto bolt_md = ws / "bolt.md";
+                std::cout << "  Instructions: " << (std::filesystem::exists(bolt_md) ? "\033[32m✓ bolt.md\033[0m" : "\033[2mno bolt.md (run: bolt init)\033[0m") << "\n";
+
+                // Global config
+                auto global_cfg = std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "") / ".bolt" / "config.json";
+                std::cout << "  Setup:        " << (std::filesystem::exists(global_cfg) ? "\033[32m✓ ~/.bolt/config.json\033[0m" : "\033[2mnot configured (run: bolt)\033[0m") << "\n";
+
+                // Tools
+                std::cout << "\n  \033[1mDependencies:\033[0m\n";
+                auto check = [](const char* name, const char* paths[], int n) {
+                    for (int i = 0; i < n; i++) {
+                        if (std::filesystem::exists(paths[i])) {
+                            std::cout << "  \033[32m  ✓\033[0m " << name << " (" << paths[i] << ")\n";
+                            return;
+                        }
+                    }
+                    std::cout << "  \033[33m  ✗\033[0m " << name << " (not found)\n";
+                };
+                const char* git_p[] = {"/usr/bin/git", "/usr/local/bin/git"};
+                check("git", git_p, 2);
+                const char* bwrap_p[] = {"/usr/bin/bwrap", "/usr/local/bin/bwrap"};
+                check("bubblewrap (sandbox)", bwrap_p, 2);
+                const char* cmake_p[] = {"/usr/bin/cmake", "/usr/local/bin/cmake"};
+                check("cmake", cmake_p, 2);
+                const char* chrome_p[] = {"/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome"};
+                check("chromium (browser tool)", chrome_p, 3);
+
+                // API keys
+                std::cout << "\n  \033[1mAPI Keys:\033[0m\n";
+                auto check_key = [](const char* name, const char* env) {
+                    const char* val = std::getenv(env);
+                    bool set = val && std::string(val).size() > 0;
+                    std::cout << "  " << (set ? "\033[32m  ✓" : "\033[2m  ·") << "\033[0m "
+                              << name << " (" << env << ")\n";
+                };
+                check_key("OpenAI", "OPENAI_API_KEY");
+                check_key("Claude", "ANTHROPIC_API_KEY");
+                check_key("Gemini", "GEMINI_API_KEY");
+                check_key("Groq", "GROQ_API_KEY");
+                check_key("DeepSeek", "DEEPSEEK_API_KEY");
+                check_key("Qwen", "DASHSCOPE_API_KEY");
+                check_key("Zhipu GLM", "ZHIPU_API_KEY");
+                check_key("Moonshot", "MOONSHOT_API_KEY");
+                check_key("Baichuan", "BAICHUAN_API_KEY");
+                check_key("Doubao", "VOLC_API_KEY");
+
+                std::cout << "\n";
+                return 0;
+            }
+            case TopLevelCommandType::init_workspace: {
+                const auto ws = std::filesystem::current_path();
+                auto bolt_md = ws / "bolt.md";
+                if (std::filesystem::exists(bolt_md)) {
+                    std::cout << "\033[33mbolt.md already exists.\033[0m Edit it manually.\n";
+                    return 0;
+                }
+
+                std::string project_type = "unknown", build_cmd, test_cmd, lang;
+                if (std::filesystem::exists(ws / "CMakeLists.txt")) {
+                    project_type = "C++ (CMake)"; build_cmd = "cmake -B build -S . && cmake --build build -j$(nproc)"; test_cmd = "./build/tests"; lang = "C++";
+                } else if (std::filesystem::exists(ws / "package.json")) {
+                    project_type = "JavaScript/TypeScript"; build_cmd = "npm install && npm run build"; test_cmd = "npm test"; lang = "TypeScript";
+                } else if (std::filesystem::exists(ws / "Cargo.toml")) {
+                    project_type = "Rust"; build_cmd = "cargo build"; test_cmd = "cargo test"; lang = "Rust";
+                } else if (std::filesystem::exists(ws / "go.mod")) {
+                    project_type = "Go"; build_cmd = "go build ./..."; test_cmd = "go test ./..."; lang = "Go";
+                } else if (std::filesystem::exists(ws / "requirements.txt") || std::filesystem::exists(ws / "pyproject.toml")) {
+                    project_type = "Python"; build_cmd = "pip install -e ."; test_cmd = "pytest"; lang = "Python";
+                } else if (std::filesystem::exists(ws / "Makefile")) {
+                    project_type = "Make"; build_cmd = "make"; test_cmd = "make test";
+                }
+
+                std::ofstream f(bolt_md);
+                f << "# Project Instructions\n\n## Project Type\n" << project_type << "\n\n";
+                if (!build_cmd.empty()) f << "## Build\n```bash\n" << build_cmd << "\n```\n\n";
+                if (!test_cmd.empty()) f << "## Test\n```bash\n" << test_cmd << "\n```\n\n";
+                if (!lang.empty()) f << "## Code Style\n- Language: " << lang << "\n\n";
+                f << "## Rules\n- Always read code before modifying it\n- Run tests after changes\n- Keep changes minimal\n";
+
+                std::cout << "\033[32m✓ Created bolt.md\033[0m (" << project_type << ")\n";
+                return 0;
+            }
             case TopLevelCommandType::train_demo:
                 run_training_demo();
                 return 0;

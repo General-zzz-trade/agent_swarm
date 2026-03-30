@@ -42,30 +42,55 @@ TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) 
     if (command == "--help" || command == "-h" || command == "help") {
         return {TopLevelCommandType::usage, command};
     }
+    if (command == "--version" || command == "-v" || command == "version") {
+        return {TopLevelCommandType::version, command};
+    }
+    if (command == "doctor") {
+        return {TopLevelCommandType::doctor, command};
+    }
+    if (command == "init") {
+        return {TopLevelCommandType::init_workspace, command};
+    }
     // Unknown command — treat as agent prompt (e.g. "bolt 'Read main.cpp'")
     return {TopLevelCommandType::invalid, command};
 }
 
 std::string build_usage_text(const std::string& program_name) {
     std::ostringstream output;
-    output << "\n\033[1m\033[36m⚡ Bolt\033[0m — AI Coding Agent\n\n";
-    output << "Usage:\n";
-    output << "  " << program_name << "                          Interactive agent (default)\n";
-    output << "  " << program_name << " agent [prompt]            Ask a question or give a task\n";
-    output << "  " << program_name << " web-chat [--port 8080]    Browser-based chat UI\n";
-    output << "  " << program_name << " telegram                  Telegram bot gateway (TELEGRAM_BOT_TOKEN)\n";
-    output << "  " << program_name << " discord                   Discord bot gateway (DISCORD_BOT_TOKEN)\n";
-    output << "  " << program_name << " wechat                   WeChat gateway (WECHAT_WEBHOOK_URL)\n";
-    output << "  " << program_name << " slack                    Slack bot gateway (SLACK_BOT_TOKEN)\n";
-    output << "  " << program_name << " bench [--rounds 5]        Performance benchmark\n";
-    output << "  " << program_name << " mcp-server               MCP protocol server (stdin/stdout)\n";
-    output << "  " << program_name << " api-server [--port 9090] REST API server\n";
-    output << "  " << program_name << " --help                    Show this help\n\n";
-    output << "Examples:\n";
+    output << "\n\033[1;36m⚡ Bolt\033[0m — AI Coding Agent (v0.5.0)\n\n";
+
+    output << "\033[1mUsage:\033[0m\n";
+    output << "  " << program_name << "                              Interactive agent (default)\n";
+    output << "  " << program_name << " agent [options] [prompt]     Ask a question or give a task\n";
+    output << "  " << program_name << " api-server [--port 9090]     REST API + Web UI server\n";
+    output << "  " << program_name << " web-chat [--port 8080]       Legacy chat UI\n";
+    output << "  " << program_name << " mcp-server                   MCP protocol (Claude Code/Cursor)\n";
+    output << "  " << program_name << " telegram                     Telegram bot\n";
+    output << "  " << program_name << " discord                      Discord bot\n";
+    output << "  " << program_name << " wechat                       WeChat bot\n";
+    output << "  " << program_name << " slack                        Slack bot\n";
+    output << "  " << program_name << " bench [--rounds 5]           Performance benchmark\n";
+    output << "  " << program_name << " init                         Create bolt.md project config\n";
+    output << "  " << program_name << " doctor                       Check environment & dependencies\n";
+
+    output << "\n\033[1mAgent options:\033[0m\n";
+    output << "  --model <name>       Set LLM model (e.g. moonshot-v1-128k, gpt-4o)\n";
+    output << "  --debug              Enable debug logging\n";
+    output << "  --resume             Resume last session\n";
+    output << "  -p, --print          Non-interactive mode (pipe stdin)\n";
+
+    output << "\n\033[1mGlobal options:\033[0m\n";
+    output << "  -v, --version        Show version\n";
+    output << "  -h, --help           Show this help\n";
+
+    output << "\n\033[1mExamples:\033[0m\n";
     output << "  " << program_name << " agent \"Read src/main.cpp and explain it\"\n";
-    output << "  " << program_name << " agent \"Search for TODO comments\"\n";
-    output << "  " << program_name << " agent \"Add error handling to the login function\"\n";
-    output << "  " << program_name << " web-chat --port 8080\n\n";
-    output << "Config: bolt.conf | Env: BOLT_PROVIDER, OPENAI_API_KEY, etc.\n";
+    output << "  " << program_name << " agent -p \"Fix the bug\" < error.log\n";
+    output << "  " << program_name << " api-server --port 19090\n";
+    output << "  " << program_name << " init\n";
+    output << "  MOONSHOT_API_KEY=sk-xxx " << program_name << "\n";
+
+    output << "\n\033[1mConfig:\033[0m bolt.conf | ~/.bolt/config.json | BOLT_PROVIDER, OPENAI_API_KEY, etc.\n";
+    output << "\033[2mDocs: https://github.com/General-zzz-trade/Bolt\033[0m\n";
     return output.str();
 }

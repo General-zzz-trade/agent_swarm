@@ -6,6 +6,7 @@
 
 enum class TopLevelCommandType {
     usage,
+    version,
     train_demo,
     agent,
     web_chat,
@@ -16,6 +17,8 @@ enum class TopLevelCommandType {
     bench,
     mcp_server,
     api_server,
+    doctor,
+    init_workspace,
     invalid,
 };
 
