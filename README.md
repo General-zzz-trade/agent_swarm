@@ -32,16 +32,17 @@ A blazing-fast autonomous coding agent written in C++17. Single binary, zero dep
 
 ## Features
 
-- **23 built-in tools** -- file ops, code search, code intelligence, build & test, git, shell, web fetch, web search, headless browser, task planning, desktop automation
+- **27 built-in tools** -- file ops, code search, code intelligence, build & test, git, shell, web fetch, web search, headless browser, email, browser automation, task planning, desktop automation
 - **Plugin system** -- extend with tools written in any language (Python, Node, Go, Rust, etc.)
 - **SKILL.md system** -- reusable prompt templates with YAML frontmatter and auto-load
-- **6 LLM providers** -- Ollama (local), OpenAI, Claude, Gemini, Groq, model router + any OpenAI-compatible API
-- **8 running modes** -- interactive terminal, single-turn, web UI, REST API, MCP server, Telegram bot, Discord bot, benchmark
+- **11 LLM providers** -- Ollama (local), OpenAI, Claude, Gemini, Groq, DeepSeek, Qwen, GLM, Moonshot, Baichuan, Doubao + model router + any OpenAI-compatible API
+- **10 running modes** -- interactive terminal, single-turn, pipe mode, web UI, REST API, MCP server, Telegram bot, Discord bot, WeChat bot, Slack bot, benchmark
 - **Autonomous loop** -- edit -> compile -> test -> fix -> repeat (auto-verify with up to 3 retries)
 - **Agent Team** -- parallel multi-agent execution with git worktree isolation
 - **Speculative execution** -- read-only tools start running before the LLM finishes streaming
+- **Compact prompt** -- reduced tool schemas for small/local models (`agent.compact_prompt=true`)
 - **Sandbox** -- Bubblewrap (Linux) and Seatbelt (macOS) for OS-level command isolation
-- **Persistent memory** -- cross-session facts stored in `~/.bolt/memory.json`
+- **Persistent memory** -- cross-session facts stored in `~/.bolt/memory.json` and `.bolt/memory.json`
 - **Session persistence** -- save/restore conversations, resume last session with `--resume`
 - **Code intelligence** -- find definitions, references, classes across C++/Python/JS/Rust/Go
 - **Setup wizard** -- first-run interactive provider and model selection
@@ -103,6 +104,9 @@ bolt
 # Single-turn agent
 bolt agent "Search the codebase for TODO comments"
 
+# Pipe mode (stdin)
+echo "Explain this error" | bolt agent
+
 # Resume last session
 bolt agent --resume
 
@@ -121,6 +125,12 @@ TELEGRAM_BOT_TOKEN=... bolt telegram
 # Discord bot
 DISCORD_BOT_TOKEN=... DISCORD_CHANNEL_ID=... bolt discord
 
+# WeChat gateway
+WECHAT_WEBHOOK_URL=... bolt wechat
+
+# Slack bot
+SLACK_BOT_TOKEN=... bolt slack
+
 # Performance benchmark
 bolt bench --rounds 5
 bolt bench --json > results.json
@@ -132,7 +142,7 @@ bolt bench --json > results.json
 
 On first launch, Bolt runs an interactive setup wizard that guides you through:
 
-1. **Provider selection** -- Ollama (local), OpenAI, Claude, Gemini, Groq
+1. **Provider selection** -- Ollama (local), OpenAI, Claude, Gemini, Groq, DeepSeek, Qwen, Zhipu, Moonshot, Baichuan, Doubao
 2. **Model selection** -- pick from available models for your chosen provider
 3. **API key entry** -- stored in `~/.bolt/config.json`
 
@@ -164,13 +174,14 @@ Re-run the model selector at any time with the `/model` interactive command.
 | `calculator` | Arithmetic expressions | Yes |
 | `task_planner` | Create and track multi-step plans | Yes |
 
-### Web & Browser
+### Web, Browser & Email
 
 | Tool | Description | Read-only |
 |------|-------------|:---------:|
 | `web_fetch` | Fetch URL and extract text content | Yes |
 | `web_search` | Search the web via DuckDuckGo | Yes |
 | `browser` | Headless Chrome: navigate, screenshot, extract text | Yes |
+| `send_email` | Send email via SendGrid (`SENDGRID_API_KEY`) | No |
 
 ### Desktop Automation
 
@@ -184,6 +195,50 @@ Re-run the model selector at any time with the `/model` interactive command.
 | `inspect_ui` | Inspect UI element tree | Yes |
 | `click_element` | Click UI elements | No |
 | `type_text` | Type text into focused window | No |
+
+---
+
+## LLM Providers
+
+### International Providers
+
+| Provider | Config value | API Key Env Var | Models |
+|----------|-------------|-----------------|--------|
+| **Ollama** (local) | `ollama-chat` | *(none needed)* | `qwen3:8b`, any local model |
+| **OpenAI** | `openai` | `OPENAI_API_KEY` | `gpt-4o`, `gpt-4o-mini`, etc. |
+| **Claude** | `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514`, etc. |
+| **Gemini** | `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash`, etc. |
+| **Groq** | `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile`, etc. |
+
+### Chinese Providers
+
+| Provider | Config value | API Key Env Var | Key URL | Default Model |
+|----------|-------------|-----------------|---------|---------------|
+| **DeepSeek** | `deepseek` | `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com/api_keys) | `deepseek-chat` |
+| **Qwen** (Alibaba) | `qwen` | `DASHSCOPE_API_KEY` | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com/apiKey) | `qwen-plus` |
+| **Zhipu** (GLM) | `zhipu` | `ZHIPU_API_KEY` | [open.bigmodel.cn](https://open.bigmodel.cn/usercenter/apikeys) | `glm-4-flash` |
+| **Moonshot** (Kimi) | `moonshot` | `MOONSHOT_API_KEY` | [platform.moonshot.cn](https://platform.moonshot.cn/console/api-keys) | `moonshot-v1-8k` |
+| **Baichuan** | `baichuan` | `BAICHUAN_API_KEY` | [platform.baichuan-ai.com](https://platform.baichuan-ai.com/console/apikey) | `Baichuan4` |
+| **Doubao** (ByteDance) | `doubao` | `VOLC_API_KEY` | [console.volcengine.com](https://console.volcengine.com/ark) | `doubao-pro-32k` |
+
+### Model Router
+
+The router mode splits requests between a fast provider (for simple tasks) and a strong provider (for complex tasks):
+
+```ini
+provider = router
+router.fast_provider = groq
+router.strong_provider = claude
+```
+
+### OpenAI-Compatible APIs
+
+Any OpenAI-compatible endpoint works via `openai` provider with a custom base URL:
+
+```ini
+provider = openai
+openai.base_url = https://your-api.example.com/v1
+```
 
 ---
 
@@ -250,6 +305,8 @@ When reviewing code, check for:
 
 Place `SKILL.md` files in `.bolt/skills/` (workspace) or `~/.bolt/skills/` (global). Skills with `auto_load: true` are injected into every prompt automatically.
 
+Manage skills interactively with `/skills` (list, reload, toggle).
+
 ---
 
 ## Sandbox
@@ -264,7 +321,8 @@ Bolt sandboxes all shell commands for OS-level isolation.
 **Configuration** (`bolt.conf`):
 ```ini
 sandbox.enabled = true
-sandbox.network = true
+sandbox.network_enabled = true
+sandbox.auto_allow_bash = false
 sandbox.allow_write = /tmp, /var/tmp
 sandbox.deny_read = ~/.ssh, ~/.aws, ~/.gnupg
 ```
@@ -275,7 +333,7 @@ export BOLT_SANDBOX_ENABLED=true
 export BOLT_SANDBOX_NETWORK=false
 ```
 
-Falls back to unsandboxed execution if bwrap/seatbelt is not installed.
+Falls back to unsandboxed execution if bwrap/seatbelt is not installed. Run `/sandbox` in interactive mode to check status, or `/doctor` for a full health check.
 
 ---
 
@@ -303,6 +361,7 @@ Falls back to unsandboxed execution if bwrap/seatbelt is not installed.
 - **Trigram file index** -- sub-millisecond code search across the workspace
 - **Thread pool** -- parallel tool execution with true multi-core utilization
 - **Prompt compressor** -- reduces context size via model router (fast/strong provider split)
+- **Compact prompt mode** -- strips schema descriptions and examples for small models, reducing token usage
 
 ---
 
@@ -316,7 +375,7 @@ Falls back to unsandboxed execution if bwrap/seatbelt is not installed.
 | **Audit log** | All write operations logged to `.bolt/audit.log` |
 | **Sensitive path blocking** | `~/.ssh`, `~/.aws`, `~/.gnupg`, `/etc/shadow` blocked by default |
 | **Network control** | Optional domain whitelist for outbound requests |
-| **Approval modes** | `auto-approve`, `ask` (interactive), or custom policy |
+| **Approval modes** | `auto-approve`, `prompt` (interactive), or `auto-deny` |
 
 ---
 
@@ -324,12 +383,34 @@ Falls back to unsandboxed execution if bwrap/seatbelt is not installed.
 
 ### Slash Commands
 
-| Category | Commands |
-|----------|----------|
-| **Session** | `/save [name]`  `/load <id>`  `/sessions`  `/delete <id>`  `/export [file]`  `/memory` |
-| **Context** | `/clear`  `/compact`  `/undo`  `/reset` |
-| **Display** | `/model`  `/cost`  `/status`  `/debug`  `/diff` |
-| **System** | `/quit`  `/help`  `/sandbox`  `/plugins` |
+| Category | Commands | Description |
+|----------|----------|-------------|
+| **Session** | `/save [name]` | Save current session |
+| | `/load <id>` | Load a saved session |
+| | `/sessions` | List all saved sessions |
+| | `/delete <id>` | Delete a saved session |
+| | `/export [file]` | Export session to file |
+| | `/memory` | View/add persistent memory facts |
+| **Context** | `/clear` | Clear conversation history |
+| | `/compact` | Compress conversation to reduce tokens |
+| | `/undo` | Undo the last assistant turn |
+| | `/reset` | Reset conversation and tools |
+| | `/context` | Show current context window usage |
+| **Display** | `/model` | Show or change current model |
+| | `/cost` | Show token usage and cost estimate |
+| | `/status` | Show agent status and configuration |
+| | `/debug` | Toggle debug mode |
+| | `/diff` | Show file changes made this session |
+| **Planning** | `/plan` | Show or create a task plan |
+| | `/team [task]` | Launch parallel agent team with worktrees |
+| **Tools** | `/sandbox` | Show sandbox status |
+| | `/plugins` | List loaded plugins |
+| | `/skills` | List, reload, or toggle skills |
+| | `/auto` | Toggle auto-verify mode |
+| **System** | `/help` | Show help |
+| | `/quit` | Exit (aliases: `/exit`, `/q`) |
+| | `/init` | Initialize workspace configuration |
+| | `/doctor` | Run health check (sandbox, providers, tools) |
 
 ### Keyboard Shortcuts
 
@@ -339,7 +420,7 @@ Falls back to unsandboxed execution if bwrap/seatbelt is not installed.
 | `Ctrl+L` | Clear screen |
 | `Ctrl+D` | Exit |
 | `Up/Down` | Command history |
-| `Tab` | Autocomplete |
+| `Tab` | Autocomplete (commands, files, tools) |
 
 ### @file References
 
@@ -359,43 +440,99 @@ Include file contents directly in your prompt:
 Create `bolt.conf` in your project root:
 
 ```ini
-# Provider: ollama | ollama-chat | openai | claude | gemini | groq | router
+# Provider: ollama | ollama-chat | openai | claude | gemini | groq |
+#           deepseek | qwen | zhipu | moonshot | baichuan | doubao | router
 provider = ollama-chat
 
 # Models
 openai.model = gpt-4o
 claude.model = claude-sonnet-4-20250514
 gemini.model = gemini-2.0-flash
+deepseek.model = deepseek-chat
+qwen.model = qwen-plus
+zhipu.model = glm-4-flash
+moonshot.model = moonshot-v1-8k
+baichuan.model = Baichuan4
+doubao.model = doubao-pro-32k
+
+# Custom base URLs (for self-hosted or proxy endpoints)
+openai.base_url = https://api.openai.com/v1
+deepseek.base_url = https://api.deepseek.com/v1
+qwen.base_url = https://dashscope.aliyuncs.com/compatible-mode/v1
+zhipu.base_url = https://open.bigmodel.cn/api/paas/v4
+moonshot.base_url = https://api.moonshot.cn/v1
+baichuan.base_url = https://api.baichuan-ai.com/v1
+doubao.base_url = https://ark.cn-beijing.volces.com/api/v3
 
 # Router mode: use fast model for simple tasks, strong for complex
 router.fast_provider = groq
 router.strong_provider = claude
 
 # Approval
-approval.mode = auto-approve
+approval.mode = auto-approve    # auto-approve | prompt | auto-deny
 
 # Sandbox
 sandbox.enabled = true
-sandbox.network = true
+sandbox.network_enabled = true
+sandbox.auto_allow_bash = false
+sandbox.allow_write = /tmp, /var/tmp
+sandbox.deny_read = ~/.ssh, ~/.aws, ~/.gnupg
 
 # Agent behavior
-agent.auto_verify = true
-agent.max_retries = 3
+agent.auto_verify = true         # Auto build+test after edits
+agent.max_auto_verify_retries = 3
+agent.max_model_steps = 50
+agent.compact_prompt = false     # Reduced schemas for small models
+agent.core_tools_only = false    # Only load core file/code tools
+agent.history_window = 20
+agent.history_byte_budget = 65536
+
+# Command execution
+commands.timeout_ms = 30000
+commands.max_output_bytes = 65536
+
+# Policy
+policy.block_high_risk = true
 ```
 
 ### Environment Variables
 
 ```bash
+# International providers
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 export GEMINI_API_KEY=AI...
 export GROQ_API_KEY=gsk_...
+
+# Chinese providers
+export DEEPSEEK_API_KEY=sk-...
+export DASHSCOPE_API_KEY=sk-...          # Qwen / Alibaba DashScope
+export ZHIPU_API_KEY=...                 # Zhipu / GLM
+export MOONSHOT_API_KEY=sk-...           # Moonshot / Kimi
+export BAICHUAN_API_KEY=sk-...           # Baichuan
+export VOLC_API_KEY=...                  # Doubao / ByteDance Volcengine
+
+# Email
+export SENDGRID_API_KEY=SG....
+
+# Chat gateways
 export TELEGRAM_BOT_TOKEN=...
 export DISCORD_BOT_TOKEN=...
 export DISCORD_CHANNEL_ID=...
-export BOLT_SANDBOX_ENABLED=true
+export WECHAT_WEBHOOK_URL=...
+export SLACK_BOT_TOKEN=...
+
+# Bolt overrides
 export BOLT_PROVIDER=claude
+export BOLT_MODEL=claude-sonnet-4-20250514
+export BOLT_SANDBOX_ENABLED=true
+export BOLT_SANDBOX_NETWORK=false
+export BOLT_AGENT_AUTO_VERIFY=true
+export BOLT_AGENT_COMPACT_PROMPT=false
+export BOLT_APPROVAL_MODE=prompt
 ```
+
+All config keys can be overridden via environment variables with the `BOLT_` prefix (dots become underscores, e.g. `agent.auto_verify` -> `BOLT_AGENT_AUTO_VERIFY`).
 
 ---
 
@@ -404,9 +541,10 @@ export BOLT_PROVIDER=claude
 ```
                          +-----------------+
                          |   LLM Provider  |
-                         | (Ollama/OpenAI/ |
+                         |(Ollama/OpenAI/  |
                          |Claude/Gemini/   |
-                         | Groq/Router)    |
+                         |Groq/DeepSeek/   |
+                         |Qwen/Zhipu/etc.) |
                          +--------+--------+
                                   |
                     +-------------v--------------+
@@ -418,7 +556,7 @@ export BOLT_PROVIDER=claude
           |           |           |           |           |
    +------v---+ +----v-----+ +--v------+ +--v------+ +--v--------+
    |Tool Engine| |Speculative| |Thread  | |File     | |  Swarm    |
-   |(23 tools) | |Executor   | |Pool    | |Index    | |Coordinator|
+   |(24 tools) | |Executor   | |Pool    | |Index    | |Coordinator|
    |+ plugins  | |(streaming)| |(N-core)| |(trigram) | |(team mode)|
    +------+---+ +----------+ +--------+ +---------+ +-----------+
           |
@@ -438,10 +576,10 @@ export BOLT_PROVIDER=claude
    +---------+
 
    Frontends:
-   +----------+ +--------+ +--------+ +---------+ +---------+
-   |Terminal  | |Web UI  | |REST API| |Telegram | |Discord  |
-   |(readline)| |(SSE)   | |Server  | |Bot      | |Bot      |
-   +----------+ +--------+ +--------+ +---------+ +---------+
+   +----------+ +--------+ +--------+ +---------+ +---------+ +------+ +-------+
+   |Terminal  | |Web UI  | |REST API| |Telegram | |Discord  | |WeChat| |Slack  |
+   |(readline)| |(SSE)   | |Server  | |Bot      | |Bot      | |GW    | |Bot    |
+   +----------+ +--------+ +--------+ +---------+ +---------+ +------+ +-------+
 ```
 
 ---
@@ -450,8 +588,8 @@ export BOLT_PROVIDER=claude
 
 ```
 src/
-  agent/            # Agent loop, 23 tools, plugins, skills, speculative executor, swarm
-  app/              # CLI, web server, API server, Telegram/Discord bots, setup wizard
+  agent/            # Agent loop, 24 tools, plugins, skills, speculative executor, swarm
+  app/              # CLI, web server, API server, Telegram/Discord/WeChat/Slack, setup wizard
   core/
     caching/        # Tool result cache
     config/         # Runtime, policy, command, sandbox, approval configs
@@ -466,11 +604,11 @@ src/
   platform/
     linux/          # libcurl, fork/exec, /proc, bubblewrap sandbox
     windows/        # WinHTTP, UI Automation, CreateProcess
-  providers/        # OpenAI, Claude, Gemini, Ollama, Groq clients
+  providers/        # OpenAI, Claude, Gemini, Ollama, Groq + Chinese providers (all OpenAI-compatible)
 web/                # Browser UI (dark/light theme, Markdown, code highlight, SSE)
 vscode-extension/   # VS Code sidebar chat + commands
 npm/                # npm package wrapper (bolt-agent)
-tests/              # 7 test executables, 147 total tests
+tests/              # 8 test executables, 154+ total tests
 third_party/        # nlohmann/json (header-only)
 ```
 
@@ -491,7 +629,7 @@ Add to your MCP client config:
 }
 ```
 
-All 23 built-in tools + any loaded plugins are exposed via JSON-RPC 2.0 over stdin/stdout.
+All 24 built-in tools + any loaded plugins are exposed via JSON-RPC 2.0 over stdin/stdout.
 
 ---
 
@@ -510,6 +648,8 @@ npx vsce package  # creates .vsix
 
 ## Testing
 
+### Unit & Integration Tests
+
 ```bash
 ./build/kernel_tests              # 70 unit tests
 ./build/agent_integration_tests   # 3 integration tests
@@ -520,13 +660,26 @@ npx vsce package  # creates .vsix
 ./build/approval_provider_tests   # 6 approval provider tests
 ```
 
-Run all (147 tests):
+Run all offline tests (147 tests):
 ```bash
 ./build/kernel_tests && ./build/agent_integration_tests && \
 ./build/capability_tests && ./build/e2e_tests && \
 ./build/sse_parser_tests && ./build/mcp_server_tests && \
 ./build/approval_provider_tests
 ```
+
+### API End-to-End Tests
+
+The `api_e2e_tests` executable runs 7 tests against a real LLM API, verifying the full agent loop (prompt -> model -> tool call -> result -> reply):
+
+```bash
+# With any supported provider
+MOONSHOT_API_KEY=sk-xxx ./build/api_e2e_tests
+DEEPSEEK_API_KEY=sk-xxx BOLT_PROVIDER=deepseek BOLT_MODEL=deepseek-chat ./build/api_e2e_tests
+OPENAI_API_KEY=sk-xxx BOLT_PROVIDER=openai BOLT_MODEL=gpt-4o-mini ./build/api_e2e_tests
+```
+
+Tests include: simple conversation, file creation, file editing, compile error fixing, writing complete programs, code search & explain, and calculator tool usage.
 
 ---
 
@@ -538,20 +691,24 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 cmake -B build -S .
 cmake --build build -j$(nproc)
 # Run all tests before submitting a PR
-./build/kernel_tests && ./build/agent_integration_tests && ./build/capability_tests
+./build/kernel_tests && ./build/agent_integration_tests && \
+./build/capability_tests && ./build/e2e_tests && \
+./build/sse_parser_tests && ./build/mcp_server_tests && \
+./build/approval_provider_tests
 ```
 
 **Areas we need help with:**
 - **Tree-sitter AST** -- replace regex code intelligence with proper parsing
-- **More providers** -- Mistral, Cohere, local GGUF inference
 - **RAG / vector search** -- semantic code retrieval for large codebases
 - **VS Code marketplace** -- publish the extension
+- **More providers** -- Mistral, Cohere, local GGUF inference
 
 ---
 
 ## Roadmap
 
 - [x] Multi-provider LLM support (Ollama, OpenAI, Claude, Gemini, Groq)
+- [x] Chinese LLM providers (DeepSeek, Qwen, Zhipu, Moonshot, Baichuan, Doubao)
 - [x] Autonomous edit -> build -> test -> fix loop (auto-verify)
 - [x] Code intelligence (definitions, references, classes)
 - [x] Task planning and progress tracking
@@ -575,10 +732,17 @@ cmake --build build -j$(nproc)
 - [x] REST API server
 - [x] Telegram bot gateway
 - [x] Discord bot gateway
+- [x] WeChat gateway
+- [x] Slack bot gateway
 - [x] Web search + web fetch tools
 - [x] Headless browser tool (Chrome)
+- [x] Email tool (SendGrid)
 - [x] File audit logging
 - [x] Model router (fast/strong provider split)
+- [x] Compact prompt mode for small models
+- [x] API E2E test suite
+- [x] Health check command (`/doctor`)
+- [x] Workspace init command (`/init`)
 - [ ] Pre-built release binaries
 - [ ] Tree-sitter AST integration
 - [ ] RAG / vector search

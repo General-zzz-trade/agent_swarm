@@ -32,11 +32,11 @@
 
 ## 功能特性
 
-- **23 个内置工具** -- 文件操作、代码搜索、代码智能、编译测试、Git、Shell 命令、网页抓取、网络搜索、无头浏览器、任务规划、桌面自动化
+- **27 个内置工具** -- 文件操作、代码搜索、代码智能、编译测试、Git、Shell 命令、网页抓取、网络搜索、无头浏览器、任务规划、桌面自动化、邮件发送、浏览器自动化
 - **插件系统** -- 用任何语言（Python、Node、Go、Rust 等）编写扩展工具
 - **SKILL.md 系统** -- 可复用的提示模板，支持 YAML 前置元数据和自动加载
-- **6 个 LLM 提供商** -- Ollama（本地）、OpenAI、Claude、Gemini、Groq、模型路由 + 任何 OpenAI 兼容 API
-- **8 种运行模式** -- 交互终端、单轮对话、Web 界面、REST API、MCP 服务器、Telegram 机器人、Discord 机器人、性能基准
+- **11 个 LLM 提供商** -- Ollama（本地）、OpenAI、Claude、Gemini、Groq、DeepSeek、通义千问、智谱 GLM、Moonshot、百川、豆包 + 模型路由 + 任何 OpenAI 兼容 API
+- **10 种运行模式** -- 交互终端、单轮对话、管道模式、Web 界面、REST API、MCP 服务器、Telegram 机器人、Discord 机器人、微信机器人、Slack 机器人、性能基准
 - **自主循环** -- 编辑 → 编译 → 测试 → 修复 → 重复（自动验证，最多重试 3 次）
 - **多 Agent 协作** -- 并行多智能体执行，基于 git worktree 隔离
 - **投机执行** -- 在 LLM 流式输出完成前，只读工具即开始运行
@@ -103,6 +103,9 @@ bolt
 # 单轮对话
 bolt agent "搜索代码库中的 TODO 注释"
 
+# 管道模式（接收 stdin 输入）
+bolt agent -p
+
 # 恢复上次会话
 bolt agent --resume
 
@@ -121,6 +124,12 @@ TELEGRAM_BOT_TOKEN=... bolt telegram
 # Discord 机器人
 DISCORD_BOT_TOKEN=... DISCORD_CHANNEL_ID=... bolt discord
 
+# 微信机器人
+WECHAT_BOT_TOKEN=... bolt wechat
+
+# Slack 机器人
+SLACK_BOT_TOKEN=... SLACK_APP_TOKEN=... bolt slack
+
 # 性能基准测试
 bolt bench --rounds 5
 bolt bench --json > results.json
@@ -132,7 +141,7 @@ bolt bench --json > results.json
 
 首次运行时，Bolt 会启动交互式设置向导，引导你完成以下配置：
 
-1. **选择提供商** -- Ollama（本地）、OpenAI、Claude、Gemini、Groq
+1. **选择提供商** -- Ollama（本地）、OpenAI、Claude、Gemini、Groq、DeepSeek、通义千问、智谱 GLM、Moonshot、百川、豆包
 2. **选择模型** -- 从所选提供商的可用模型中挑选
 3. **输入 API Key** -- 保存至 `~/.bolt/config.json`
 
@@ -164,13 +173,14 @@ bolt bench --json > results.json
 | `calculator` | 算术表达式计算 | 是 |
 | `task_planner` | 创建和跟踪多步任务计划 | 是 |
 
-### 网络与浏览器
+### 网络与通信
 
 | 工具 | 功能 | 只读 |
 |------|------|:----:|
 | `web_fetch` | 抓取 URL 并提取文本内容 | 是 |
 | `web_search` | 通过 DuckDuckGo 进行网络搜索 | 是 |
-| `browser` | 无头 Chrome：导航、截图、提取文本 | 是 |
+| `browser` | 无头 Chrome：导航、截图、点击、提取文本 | 是 |
+| `send_email` | 通过 SMTP 发送邮件（支持附件） | 否 |
 
 ### 桌面自动化
 
@@ -327,9 +337,10 @@ export BOLT_SANDBOX_NETWORK=false
 | 类别 | 命令 |
 |------|------|
 | **会话** | `/save [name]`  `/load <id>`  `/sessions`  `/delete <id>`  `/export [file]`  `/memory` |
-| **上下文** | `/clear`  `/compact`  `/undo`  `/reset` |
-| **显示** | `/model`  `/cost`  `/status`  `/debug`  `/diff` |
-| **系统** | `/quit`  `/help`  `/sandbox`  `/plugins` |
+| **上下文** | `/clear`  `/compact`  `/undo`  `/reset`  `/context` |
+| **显示** | `/model`  `/cost`  `/status`  `/debug`  `/diff`  `/doctor` |
+| **模式** | `/plan`  `/auto` |
+| **系统** | `/quit`  `/help`  `/init`  `/sandbox`  `/plugins`  `/skills`  `/team`  `/bench` |
 
 ### 快捷键
 
@@ -354,81 +365,75 @@ export BOLT_SANDBOX_NETWORK=false
 
 ## 国产大模型接入
 
-Bolt 支持任何兼容 OpenAI API 的大模型服务。以下是国产主流大模型的配置方式：
+Bolt 内置了 6 家国产大模型的原生提供商支持，开箱即用。也可通过 OpenAI 兼容 API 接入其他服务。
 
 ### DeepSeek
 
 ```ini
-provider = openai
-openai.base_url = https://api.deepseek.com/v1
-openai.model = deepseek-chat
+provider = deepseek
+deepseek.model = deepseek-chat
 ```
 
 ```bash
-export OPENAI_API_KEY=sk-...   # DeepSeek API Key
+export DEEPSEEK_API_KEY=sk-...
 ```
 
 ### 通义千问（Qwen）
 
 ```ini
-provider = openai
-openai.base_url = https://dashscope.aliyuncs.com/compatible-mode/v1
-openai.model = qwen-plus
+provider = qwen
+qwen.model = qwen-plus
 ```
 
 ```bash
-export OPENAI_API_KEY=sk-...   # 阿里云 DashScope API Key
+export QWEN_API_KEY=sk-...     # 阿里云 DashScope API Key
 ```
 
 ### 智谱 GLM
 
 ```ini
-provider = openai
-openai.base_url = https://open.bigmodel.cn/api/paas/v4
-openai.model = glm-4
+provider = glm
+glm.model = glm-4
 ```
 
 ```bash
-export OPENAI_API_KEY=...      # 智谱 API Key
+export GLM_API_KEY=...
 ```
 
 ### Moonshot（月之暗面）
 
 ```ini
-provider = openai
-openai.base_url = https://api.moonshot.cn/v1
-openai.model = moonshot-v1-8k
+provider = moonshot
+moonshot.model = moonshot-v1-8k
 ```
 
 ```bash
-export OPENAI_API_KEY=sk-...   # Moonshot API Key
+export MOONSHOT_API_KEY=sk-...
 ```
 
 ### 百川智能
 
 ```ini
-provider = openai
-openai.base_url = https://api.baichuan-ai.com/v1
-openai.model = Baichuan4
+provider = baichuan
+baichuan.model = Baichuan4
 ```
 
 ```bash
-export OPENAI_API_KEY=sk-...   # 百川 API Key
+export BAICHUAN_API_KEY=sk-...
 ```
 
 ### 豆包（字节跳动）
 
 ```ini
-provider = openai
-openai.base_url = https://ark.cn-beijing.volces.com/api/v3
-openai.model = <你的接入点 ID>
+provider = doubao
+doubao.model = <你的接入点 ID>
 ```
 
 ```bash
-export OPENAI_API_KEY=...      # 火山引擎 API Key
+export DOUBAO_API_KEY=...      # 火山引擎 API Key
 ```
 
-> 所有兼容 OpenAI 格式的国产大模型均可通过设置 `openai.base_url` 接入，无需额外适配。
+> 除原生支持的 6 家国产提供商外，其他兼容 OpenAI 格式的大模型服务也可通过设置 `openai.base_url` 接入。
 
 ---
 
@@ -439,7 +444,7 @@ export OPENAI_API_KEY=...      # 火山引擎 API Key
 在项目根目录创建 `bolt.conf`：
 
 ```ini
-# 提供商: ollama | ollama-chat | openai | claude | gemini | groq | router
+# 提供商: ollama | ollama-chat | openai | claude | gemini | groq | deepseek | qwen | glm | moonshot | baichuan | doubao | router
 provider = ollama-chat
 
 # 模型
@@ -470,9 +475,18 @@ export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 export GEMINI_API_KEY=AI...
 export GROQ_API_KEY=gsk_...
+export DEEPSEEK_API_KEY=sk-...
+export QWEN_API_KEY=sk-...
+export GLM_API_KEY=...
+export MOONSHOT_API_KEY=sk-...
+export BAICHUAN_API_KEY=sk-...
+export DOUBAO_API_KEY=...
 export TELEGRAM_BOT_TOKEN=...
 export DISCORD_BOT_TOKEN=...
 export DISCORD_CHANNEL_ID=...
+export WECHAT_BOT_TOKEN=...
+export SLACK_BOT_TOKEN=xoxb-...
+export SLACK_APP_TOKEN=xapp-...
 export BOLT_SANDBOX_ENABLED=true
 export BOLT_PROVIDER=claude
 ```
@@ -486,7 +500,8 @@ export BOLT_PROVIDER=claude
                          |   LLM 提供商    |
                          | (Ollama/OpenAI/ |
                          |Claude/Gemini/   |
-                         | Groq/路由)      |
+                         |Groq/DeepSeek/   |
+                         |Qwen/GLM/路由)   |
                          +--------+--------+
                                   |
                     +-------------v--------------+
@@ -498,7 +513,7 @@ export BOLT_PROVIDER=claude
           |           |           |           |           |
    +------v---+ +----v-----+ +--v------+ +--v------+ +--v--------+
    | 工具引擎 | |  投机    | | 线程池 | | 文件    | | 集群      |
-   | (23 工具)| |  执行器  | | (N核)  | | 索引    | | 协调器    |
+   | (27 工具)| |  执行器  | | (N核)  | | 索引    | | 协调器    |
    | + 插件   | | (流式)   | |        | | (三元组)| | (团队模式)|
    +------+---+ +----------+ +--------+ +---------+ +-----------+
           |
@@ -518,10 +533,10 @@ export BOLT_PROVIDER=claude
    +---------+
 
    前端:
-   +----------+ +--------+ +--------+ +---------+ +---------+
-   |  终端    | |Web 界面| |REST API| |Telegram | |Discord  |
-   |(readline)| | (SSE)  | | 服务器 | | 机器人  | | 机器人  |
-   +----------+ +--------+ +--------+ +---------+ +---------+
+   +----------+ +--------+ +--------+ +---------+ +---------+ +--------+ +-------+
+   |  终端    | |Web 界面| |REST API| |Telegram | |Discord  | | 微信   | | Slack |
+   |(readline)| | (SSE)  | | 服务器 | | 机器人  | | 机器人  | | 机器人 | | 机器人|
+   +----------+ +--------+ +--------+ +---------+ +---------+ +--------+ +-------+
 ```
 
 ---
@@ -530,8 +545,8 @@ export BOLT_PROVIDER=claude
 
 ```
 src/
-  agent/            # Agent 循环、23 个工具、插件、技能、投机执行器、集群
-  app/              # CLI、Web 服务器、API 服务器、Telegram/Discord 机器人、设置向导
+  agent/            # Agent 循环、27 个工具、插件、技能、投机执行器、集群
+  app/              # CLI、Web 服务器、API 服务器、Telegram/Discord/微信/Slack 机器人、设置向导
   core/
     caching/        # 工具结果缓存
     config/         # 运行时、策略、命令、沙箱、审批配置
@@ -546,11 +561,12 @@ src/
   platform/
     linux/          # libcurl、fork/exec、/proc、bubblewrap 沙箱
     windows/        # WinHTTP、UI 自动化、CreateProcess
-  providers/        # OpenAI、Claude、Gemini、Ollama、Groq 客户端
+  providers/        # OpenAI、Claude、Gemini、Ollama、Groq、DeepSeek、Qwen、GLM、
+                    #   Moonshot、Baichuan、Doubao 客户端
 web/                # 浏览器 UI（深色/浅色主题、Markdown、代码高亮、SSE）
 vscode-extension/   # VS Code 侧边栏聊天 + 命令
 npm/                # npm 包装器 (bolt-agent)
-tests/              # 7 个测试程序，共 147 个测试
+tests/              # 8 个测试程序，共 159 个测试
 third_party/        # nlohmann/json（仅头文件）
 ```
 
@@ -571,7 +587,7 @@ third_party/        # nlohmann/json（仅头文件）
 }
 ```
 
-全部 23 个内置工具及已加载插件均通过 JSON-RPC 2.0 协议经由 stdin/stdout 暴露。
+全部 27 个内置工具及已加载插件均通过 JSON-RPC 2.0 协议经由 stdin/stdout 暴露。
 
 ---
 
@@ -598,14 +614,15 @@ npx vsce package  # 生成 .vsix 文件
 ./build/sse_parser_tests          # 10 个 SSE 解析器测试
 ./build/mcp_server_tests          # 8 个 MCP 服务器测试
 ./build/approval_provider_tests   # 6 个审批提供商测试
+./build/api_e2e_tests             # 12 个 API 端到端测试
 ```
 
-运行全部（共 147 个测试）：
+运行全部（共 159 个测试）：
 ```bash
 ./build/kernel_tests && ./build/agent_integration_tests && \
 ./build/capability_tests && ./build/e2e_tests && \
 ./build/sse_parser_tests && ./build/mcp_server_tests && \
-./build/approval_provider_tests
+./build/approval_provider_tests && ./build/api_e2e_tests
 ```
 
 ---
@@ -623,7 +640,6 @@ cmake --build build -j$(nproc)
 
 **我们需要帮助的方向：**
 - **Tree-sitter AST** -- 用正式的 AST 解析替代 regex 代码智能
-- **更多提供商** -- Mistral、Cohere、本地 GGUF 推理
 - **RAG / 向量搜索** -- 大型代码库的语义检索
 - **VS Code 市场** -- 发布扩展
 
@@ -632,6 +648,7 @@ cmake --build build -j$(nproc)
 ## 路线图
 
 - [x] 多提供商 LLM 支持 (Ollama, OpenAI, Claude, Gemini, Groq)
+- [x] 国产大模型原生支持 (DeepSeek, 通义千问, 智谱 GLM, Moonshot, 百川, 豆包)
 - [x] 自主 编辑 → 编译 → 测试 → 修复 循环（自动验证）
 - [x] 代码智能（定义、引用、类）
 - [x] 任务规划和进度跟踪
@@ -655,10 +672,15 @@ cmake --build build -j$(nproc)
 - [x] REST API 服务器
 - [x] Telegram 机器人
 - [x] Discord 机器人
+- [x] 微信机器人
+- [x] Slack 机器人
 - [x] 网络搜索 + 网页抓取工具
 - [x] 无头浏览器工具 (Chrome)
+- [x] 邮件发送工具 (SMTP)
 - [x] 文件审计日志
 - [x] 模型路由器（快速/强力提供商分流）
+- [x] 27 个斜杠命令（/plan、/auto、/doctor、/context、/init、/skills、/team 等）
+- [x] API 端到端测试 (api_e2e_tests)
 - [ ] 预编译发布二进制
 - [ ] Tree-sitter AST 集成
 - [ ] RAG / 向量搜索

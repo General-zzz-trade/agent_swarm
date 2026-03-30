@@ -31,11 +31,12 @@ cmake --build build -j$(nproc) --target bolt
 ./build/sse_parser_tests          # 10 SSE parser tests
 ./build/mcp_server_tests          # 8 MCP server tests
 ./build/approval_provider_tests   # 6 approval provider tests
+./build/api_e2e_tests             # 12 API E2E tests
 ```
 
 All tests must pass before PR. Run all:
 ```bash
-./build/kernel_tests && ./build/agent_integration_tests && ./build/capability_tests && ./build/e2e_tests && ./build/sse_parser_tests && ./build/mcp_server_tests && ./build/approval_provider_tests
+./build/kernel_tests && ./build/agent_integration_tests && ./build/capability_tests && ./build/e2e_tests && ./build/sse_parser_tests && ./build/mcp_server_tests && ./build/approval_provider_tests && ./build/api_e2e_tests
 ```
 
 ## Run
@@ -43,9 +44,15 @@ All tests must pass before PR. Run all:
 ```bash
 ./build/bolt                              # Interactive mode
 ./build/bolt agent "prompt here"          # Single-turn
+./build/bolt agent -p                     # Pipe mode
 ./build/bolt agent --resume               # Resume last session
 ./build/bolt web-chat --port 8080         # Web UI
-./build/bolt mcp-server                   # MCP server for Claude Code/Cursor
+./build/bolt api-server --port 9090       # REST API
+./build/bolt mcp-server                   # MCP server
+./build/bolt telegram                     # Telegram bot
+./build/bolt discord                      # Discord bot
+./build/bolt wechat                       # WeChat bot
+./build/bolt slack                        # Slack bot
 ./build/bolt bench --rounds 5             # Benchmark
 ```
 
@@ -53,9 +60,10 @@ All tests must pass before PR. Run all:
 
 ```
 Session:    /save [name]  /load <id>  /sessions  /delete <id>  /export [file]  /memory
-Context:    /clear  /compact  /undo  /reset
-Display:    /model  /cost  /status  /debug  /diff
-System:     /quit  /help  /sandbox  /plugins
+Context:    /clear  /compact  /undo  /reset  /context
+Display:    /model  /cost  /status  /debug  /diff  /doctor
+Mode:       /plan  /auto
+System:     /quit  /help  /init  /sandbox  /plugins  /skills  /team  /bench
 
 Shortcuts:  Ctrl+C cancel  Ctrl+L clear  Ctrl+D exit  ↑/↓ history  Tab complete
 File ref:   @file or @file:10-20 to include file contents in prompt
@@ -65,7 +73,7 @@ File ref:   @file or @file:10-20 to include file contents in prompt
 
 ```
 src/
-  agent/        # Tools (25 built-in + plugins) and agent loop
+  agent/        # Tools (27 built-in + plugins) and agent loop
     speculative_executor  # Predictive tool execution during LLM streaming
     plugin_loader         # External plugin discovery and loading
   app/          # CLI, config, factories, runners, terminal UI
@@ -74,6 +82,8 @@ src/
     signal_handler      # Ctrl+C cancellation, SIGWINCH resize
     token_tracker       # Token usage and cost estimation
     rate_limiter        # HTTP request rate limiting
+    wechat_bot          # WeChat gateway
+    slack_bot           # Slack gateway
   core/
     caching/    # Tool result cache
     config/     # Runtime/policy configs
@@ -88,8 +98,9 @@ src/
   platform/
     linux/      # Linux implementations (libcurl, fork/exec, /proc)
     windows/    # Windows implementations (WinHTTP, CreateProcess)
-  providers/    # LLM clients: OpenAI, Claude, Gemini, Ollama
-tests/          # 7 test executables, 147 total tests
+  providers/    # LLM clients: OpenAI, Claude, Gemini, Ollama, Groq, DeepSeek,
+                #   Qwen, GLM, Moonshot, Baichuan, Doubao
+tests/          # 8 test executables, 159 total tests
 web/            # Web UI (dark/light theme, Markdown, SSE streaming)
 vscode-extension/  # VS Code sidebar chat extension
 npm/            # npm package (bolt-agent)
@@ -131,7 +142,10 @@ npm/            # npm package (bolt-agent)
 - The `third_party/` dir is included globally via `include_directories()` — headers available everywhere
 - `TerminalInput` uses raw termios mode — falls back to `std::getline` when not a TTY (pipes, tests)
 - `TerminalApprovalProvider` has two constructors: legacy (istream/ostream) for tests, rich (renderer/input) for interactive
-- Token usage is parsed per-provider: Claude `usage`, OpenAI `usage`, Gemini `usageMetadata`, Ollama `eval_count`
+- Token usage is parsed per-provider: Claude `usage`, OpenAI `usage`, Gemini `usageMetadata`, Ollama `eval_count`, DeepSeek/Qwen/GLM/Moonshot/Baichuan/Doubao via OpenAI-compatible `usage`
+- WeChat bot requires `WECHAT_WEBHOOK_URL` (default `http://localhost:3001`); Slack bot requires `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID`
+- `send_email` tool requires `SENDGRID_API_KEY` env var; optional `BOLT_EMAIL_FROM` for sender address
+- `browser` tool requires headless Chrome/Chromium in PATH
 - `SandboxedCommandRunner` wraps `LinuxCommandRunner` with bubblewrap (`bwrap`) for OS-level isolation; falls back to unsandboxed if bwrap is not installed
 - Sandbox config keys live under `sandbox.*` in bolt.conf; env overrides are `BOLT_SANDBOX_ENABLED` and `BOLT_SANDBOX_NETWORK`
 - Plugins live in `.bolt/plugins/` (workspace) or `~/.bolt/plugins/` (global), each with a `plugin.json` manifest
