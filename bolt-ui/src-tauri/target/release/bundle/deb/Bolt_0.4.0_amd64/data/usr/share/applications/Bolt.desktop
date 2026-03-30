@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=
+Comment=Bolt — AI Coding Agent Desktop App
+Exec=bolt-desktop
+StartupWMClass=bolt-desktop
+Icon=bolt-desktop
+Name=Bolt
+Terminal=false
+Type=Application

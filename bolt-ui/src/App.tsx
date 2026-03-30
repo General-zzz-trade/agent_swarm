@@ -7,7 +7,14 @@ import ChatInput from './components/ChatInput'
 import WelcomeScreen from './components/WelcomeScreen'
 import SettingsPanel from './components/SettingsPanel'
 
-const API_BASE = window.location.port === '3000' ? 'http://localhost:9090' : ''
+// In Tauri: connect to bolt api-server on port 19090
+// In browser dev: proxy via vite to port 9090
+// In production web: same origin
+const API_BASE = window.__TAURI__
+  ? 'http://localhost:19090'
+  : window.location.port === '3000'
+    ? 'http://localhost:9090'
+    : ''
 
 export default function App() {
   const { messages, isStreaming, sendMessage, cancelStream, clearMessages } = useChat(API_BASE)

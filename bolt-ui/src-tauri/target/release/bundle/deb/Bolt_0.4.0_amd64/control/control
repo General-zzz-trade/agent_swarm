@@ -1,0 +1,9 @@
+Package: bolt
+Version: 0.4.0
+Architecture: amd64
+Installed-Size: 12266
+Maintainer: Bolt Contributors
+Priority: optional
+Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+Description: Bolt — AI Coding Agent Desktop App
+ (none)
