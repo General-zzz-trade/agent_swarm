@@ -957,39 +957,129 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
         // Also expand @file references
         std::string expanded = expand_file_references(line, workspace_root);
 
-        // Track files that might be edited (for undo support)
-        // Hook into trace observer to capture edit operations
+        // Spinner + streaming state (declared before trace observer so lambda can capture)
+        Spinner spinner;
+        bool first_token = true;
+        bool spinner_stopped_for_tools = false;
+
+        // Track tool calls for live display + undo support
+        std::size_t last_trace_size = 0;
         agent.set_trace_observer([&](const std::vector<ExecutionStep>& trace) {
-            for (const auto& step : trace) {
+            // Stop spinner before writing tool progress (prevent race)
+            if (!spinner_stopped_for_tools && first_token) {
+                spinner.stop();
+                spinner_stopped_for_tools = true;
+                output << "\n";
+            }
+            // Show new steps as they appear
+            for (std::size_t i = last_trace_size; i < trace.size(); ++i) {
+                const auto& step = trace[i];
+
+                // Undo support: capture file state before edits
                 if ((step.tool_name == "edit_file" || step.tool_name == "write_file") &&
                     step.status == ExecutionStepStatus::planned) {
-                    // Try to capture file state before edit
                     auto path_start = step.args.find("path=");
+                    std::string path_str;
                     if (path_start != std::string::npos) {
                         auto path_end = step.args.find('\n', path_start);
-                        std::string rel_path = step.args.substr(path_start + 5,
+                        path_str = step.args.substr(path_start + 5,
                             path_end == std::string::npos ? std::string::npos : path_end - path_start - 5);
-                        // Trim
-                        while (!rel_path.empty() && (rel_path.back() == ' ' || rel_path.back() == '\r'))
-                            rel_path.pop_back();
-
-                        auto full_path = workspace_root / rel_path;
+                    } else {
+                        // Try JSON format
+                        try {
+                            auto j = nlohmann::json::parse(step.args);
+                            path_str = j.value("path", "");
+                        } catch (...) {}
+                    }
+                    while (!path_str.empty() && (path_str.back() == ' ' || path_str.back() == '\r'))
+                        path_str.pop_back();
+                    if (!path_str.empty()) {
+                        auto full_path = workspace_root / path_str;
                         if (std::filesystem::exists(full_path)) {
                             std::ifstream f(full_path);
                             std::string content(std::istreambuf_iterator<char>(f), {});
-                            // Only keep last 20 undo entries
                             if (undo_stack.size() >= 20) undo_stack.erase(undo_stack.begin());
                             undo_stack.push_back({full_path.string(), content});
                         }
                     }
                 }
+
+                // Live tool call display
+                if (step.status == ExecutionStepStatus::planned) {
+                    // Tool is about to run — show spinner-like indicator
+                    std::string tool_desc = step.tool_name;
+                    // Add context from args
+                    std::string arg_hint;
+                    if (step.tool_name == "read_file" || step.tool_name == "list_dir") {
+                        arg_hint = step.args.substr(0, 60);
+                    } else if (step.tool_name == "edit_file" || step.tool_name == "write_file") {
+                        try {
+                            auto j = nlohmann::json::parse(step.args);
+                            arg_hint = j.value("path", "");
+                        } catch (...) {
+                            auto p = step.args.find("path=");
+                            if (p != std::string::npos) {
+                                auto e = step.args.find('\n', p);
+                                arg_hint = step.args.substr(p + 5, e == std::string::npos ? 60 : e - p - 5);
+                            }
+                        }
+                    } else if (step.tool_name == "git") {
+                        arg_hint = step.args.substr(0, 40);
+                    } else if (step.tool_name == "search_code") {
+                        auto q = step.args.find("query=");
+                        if (q != std::string::npos) {
+                            auto e = step.args.find('\n', q);
+                            arg_hint = step.args.substr(q + 6, e == std::string::npos ? 40 : e - q - 6);
+                        }
+                    } else if (step.tool_name == "run_command" || step.tool_name == "build_and_test") {
+                        arg_hint = step.args.substr(0, 50);
+                    } else if (step.tool_name == "calculator") {
+                        arg_hint = step.args.substr(0, 30);
+                    }
+                    // Trim arg_hint
+                    while (!arg_hint.empty() && (arg_hint.back() == '\n' || arg_hint.back() == '\r'))
+                        arg_hint.pop_back();
+
+                    output << "\r\033[K"  // Clear line
+                           << "  \033[33m⠋\033[0m \033[2m" << tool_desc;
+                    if (!arg_hint.empty()) output << " \033[36m" << arg_hint << "\033[0m";
+                    output << "\033[0m" << std::flush;
+                } else if (step.status == ExecutionStepStatus::completed) {
+                    // Tool succeeded
+                    std::string summary;
+                    if (step.detail.size() > 80) {
+                        summary = step.detail.substr(0, 77) + "...";
+                    } else {
+                        summary = step.detail;
+                    }
+                    // Replace newlines in summary
+                    for (auto& c : summary) if (c == '\n') c = ' ';
+
+                    output << "\r\033[K"  // Clear line
+                           << "  \033[32m✓\033[0m \033[2m" << step.tool_name
+                           << "\033[0m";
+                    if (!summary.empty() && summary != "Pending execution") {
+                        output << " \033[2m— " << summary << "\033[0m";
+                    }
+                    output << "\n" << std::flush;
+                } else if (step.status == ExecutionStepStatus::failed) {
+                    std::string err = step.detail.substr(0, 80);
+                    for (auto& c : err) if (c == '\n') c = ' ';
+                    output << "\r\033[K"
+                           << "  \033[31m✗\033[0m \033[2m" << step.tool_name
+                           << "\033[0m \033[31m" << err << "\033[0m\n" << std::flush;
+                } else if (step.status == ExecutionStepStatus::denied ||
+                           step.status == ExecutionStepStatus::blocked) {
+                    output << "\r\033[K"
+                           << "  \033[33m⊘\033[0m \033[2m" << step.tool_name
+                           << "\033[0m \033[33m" << step.detail.substr(0, 60) << "\033[0m\n"
+                           << std::flush;
+                }
             }
+            last_trace_size = trace.size();
         });
 
         // Stream the response
-        Spinner spinner;
-        bool first_token = true;
-
         SignalHandler::instance().reset();
         spinner.start(output);
         renderer.begin_stream();
@@ -998,7 +1088,9 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             std::string reply = agent.run_turn_streaming(expanded,
                 [&](const std::string& token) {
                     if (first_token) {
-                        spinner.stop();
+                        if (!spinner_stopped_for_tools) {
+                            spinner.stop();
+                        }
                         first_token = false;
                         output << "\n";
                     }
@@ -1006,7 +1098,9 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                 });
 
             if (first_token) {
-                spinner.stop();
+                if (!spinner_stopped_for_tools) {
+                    spinner.stop();
+                }
                 output << "\n";
                 renderer.render_markdown(reply);
             }
@@ -1023,7 +1117,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                                        current_session_id);
 
         } catch (const std::exception& e) {
-            if (first_token) spinner.stop();
+            if (first_token && !spinner_stopped_for_tools) spinner.stop();
             renderer.end_stream();
             output << "\n\033[31mError: " << e.what() << "\033[0m\n";
         }
