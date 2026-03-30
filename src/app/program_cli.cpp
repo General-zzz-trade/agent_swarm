@@ -21,6 +21,9 @@ TopLevelCommand resolve_top_level_command(const std::vector<std::string>& args) 
     if (command == "telegram") {
         return {TopLevelCommandType::telegram, command};
     }
+    if (command == "discord") {
+        return {TopLevelCommandType::discord, command};
+    }
     if (command == "bench") {
         return {TopLevelCommandType::bench, command};
     }
@@ -45,6 +48,7 @@ std::string build_usage_text(const std::string& program_name) {
     output << "  " << program_name << " agent [prompt]            Ask a question or give a task\n";
     output << "  " << program_name << " web-chat [--port 8080]    Browser-based chat UI\n";
     output << "  " << program_name << " telegram                  Telegram bot gateway (TELEGRAM_BOT_TOKEN)\n";
+    output << "  " << program_name << " discord                   Discord bot gateway (DISCORD_BOT_TOKEN)\n";
     output << "  " << program_name << " bench [--rounds 5]        Performance benchmark\n";
     output << "  " << program_name << " mcp-server               MCP protocol server (stdin/stdout)\n";
     output << "  " << program_name << " api-server [--port 9090] REST API server\n";

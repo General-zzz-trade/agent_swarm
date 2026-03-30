@@ -127,6 +127,7 @@ add_executable(bolt
         src/app/benchmark_runner.cpp
         src/app/api_server.cpp
         src/app/telegram_gateway.cpp
+        src/app/discord_gateway.cpp
         src/app/web_chat_server.cpp
 )
 if (WIN32)

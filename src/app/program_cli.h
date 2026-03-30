@@ -10,6 +10,7 @@ enum class TopLevelCommandType {
     agent,
     web_chat,
     telegram,
+    discord,
     bench,
     mcp_server,
     api_server,

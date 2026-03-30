@@ -18,6 +18,7 @@
 #include "core/mcp/mcp_server.h"
 #include "app/program_cli.h"
 #include "app/telegram_gateway.h"
+#include "app/discord_gateway.h"
 #include "app/web_approval_provider.h"
 #include "app/api_server.h"
 #include "app/web_chat_cli_options.h"
@@ -165,6 +166,48 @@ int run_telegram(int argc, char* argv[]) {
     return gateway.run();
 }
 
+int run_discord(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+    const std::filesystem::path workspace_root = std::filesystem::current_path();
+    const AppConfig config = load_app_config(workspace_root);
+
+    // Get bot token from env
+    const char* token_env = std::getenv("DISCORD_BOT_TOKEN");
+    if (!token_env || std::string(token_env).empty()) {
+        std::cerr << "Error: DISCORD_BOT_TOKEN environment variable is required.\n";
+        std::cerr << "Get a token from the Discord Developer Portal.\n";
+        return 1;
+    }
+
+    // Get channel ID from env
+    const char* channel_env = std::getenv("DISCORD_CHANNEL_ID");
+    if (!channel_env || std::string(channel_env).empty()) {
+        std::cerr << "Error: DISCORD_CHANNEL_ID environment variable is required.\n";
+        std::cerr << "Set it to the channel ID the bot should listen to.\n";
+        return 1;
+    }
+
+    AgentCliOptions agent_options;
+    agent_options.model = config.default_model;
+
+    AgentServices services =
+        create_platform_agent_services(config, agent_options, std::cin, std::cout);
+    // Use static approval (auto-approve) for Discord since there is no
+    // interactive terminal to prompt.
+    auto static_approval = std::make_shared<StaticApprovalProvider>(true);
+    services.approval_provider = static_approval;
+
+    // Keep a reference to the transport before moving services
+    auto transport = services.http_transport;
+
+    std::unique_ptr<Agent> agent =
+        create_agent(workspace_root, config, agent_options, std::move(services));
+
+    DiscordGateway gateway(token_env, channel_env, *agent, transport, workspace_root);
+    return gateway.run();
+}
+
 int run_api_server(int argc, char* argv[]) {
     const std::filesystem::path workspace_root = std::filesystem::current_path();
     const AppConfig config = load_app_config(workspace_root);
@@ -229,6 +272,8 @@ int main(int argc, char* argv[]) {
                 return run_web_chat(argc, argv);
             case TopLevelCommandType::telegram:
                 return run_telegram(argc, argv);
+            case TopLevelCommandType::discord:
+                return run_discord(argc, argv);
             case TopLevelCommandType::bench:
                 return run_benchmark(argc, argv);
             case TopLevelCommandType::mcp_server:
