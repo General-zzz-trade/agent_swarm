@@ -101,6 +101,7 @@ elseif (UNIX)
         src/platform/linux/linux_agent_factory.cpp
         src/platform/linux/linux_file_system.cpp
         src/platform/linux/linux_command_runner.cpp
+        src/platform/linux/sandboxed_command_runner.cpp
         src/platform/linux/linux_process_manager.cpp
         src/platform/linux/linux_http_transport.cpp
         src/providers/openai_client.cpp

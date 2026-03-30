@@ -10,6 +10,7 @@
 #include "../../app/file_audit_logger.h"
 #include "../../app/model_client_factory.h"
 #include "linux_command_runner.h"
+#include "sandboxed_command_runner.h"
 #include "linux_file_system.h"
 #include "linux_http_transport.h"
 #include "linux_process_manager.h"
@@ -20,7 +21,13 @@ AgentServices create_linux_agent_services(const AppConfig& config,
                                           std::ostream& output) {
     AgentServices services;
     services.file_system = std::make_shared<LinuxFileSystem>();
-    services.command_runner = std::make_shared<LinuxCommandRunner>();
+    auto base_runner = std::make_shared<LinuxCommandRunner>();
+    if (config.sandbox.enabled) {
+        services.command_runner = std::make_shared<SandboxedCommandRunner>(
+            base_runner, std::filesystem::current_path(), config.sandbox);
+    } else {
+        services.command_runner = base_runner;
+    }
     services.process_manager = std::make_shared<LinuxProcessManager>();
     // No UI automation or window controller on Linux (desktop tools will be skipped)
     services.ui_automation = nullptr;

@@ -130,3 +130,5 @@ npm/            # npm package (bolt-agent)
 - `TerminalInput` uses raw termios mode — falls back to `std::getline` when not a TTY (pipes, tests)
 - `TerminalApprovalProvider` has two constructors: legacy (istream/ostream) for tests, rich (renderer/input) for interactive
 - Token usage is parsed per-provider: Claude `usage`, OpenAI `usage`, Gemini `usageMetadata`, Ollama `eval_count`
+- `SandboxedCommandRunner` wraps `LinuxCommandRunner` with bubblewrap (`bwrap`) for OS-level isolation; falls back to unsandboxed if bwrap is not installed
+- Sandbox config keys live under `sandbox.*` in bolt.conf; env overrides are `BOLT_SANDBOX_ENABLED` and `BOLT_SANDBOX_NETWORK`

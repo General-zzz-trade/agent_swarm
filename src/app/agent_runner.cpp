@@ -188,7 +188,8 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
         "/help", "/quit", "/exit", "/q",
         "/clear", "/compact", "/model", "/cost",
         "/debug", "/save", "/load", "/sessions", "/delete",
-        "/export", "/undo", "/diff", "/status", "/reset"
+        "/export", "/undo", "/diff", "/status", "/reset",
+        "/sandbox"
     };
     term_input.set_slash_commands(slash_commands);
     if (!workspace_root.empty()) {
@@ -305,6 +306,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "  \033[1m/status\033[0m            Show current status\n";
             output << "  \033[1m/debug\033[0m             Toggle debug mode\n";
             output << "  \033[1m/diff\033[0m              Show git diff\n";
+            output << "  \033[1m/sandbox\033[0m           Show sandbox status\n";
             output << "\n\033[1;35m System\033[0m\n";
             output << "  \033[1m/quit\033[0m              Exit Bolt\n";
             output << "\n\033[1;35m Shortcuts\033[0m\n";
@@ -530,6 +532,23 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             undo_stack.clear();
             current_session_id = SessionStore::generate_id();
             output << "\033[2mFull reset complete.\033[0m\n";
+            continue;
+        }
+
+        if (line == "/sandbox") {
+            output << "\n\033[1;35m Sandbox Status\033[0m\n\n";
+            bool bwrap_available = std::filesystem::exists("/usr/bin/bwrap") ||
+                                   std::filesystem::exists("/usr/local/bin/bwrap");
+            output << "  Bubblewrap: " << (bwrap_available ? "\033[32mavailable\033[0m" : "\033[31mnot found\033[0m") << "\n";
+            output << "\n  \033[2mConfigure in bolt.conf or env:\033[0m\n";
+            output << "    sandbox.enabled = true\n";
+            output << "    sandbox.network_enabled = true\n";
+            output << "    sandbox.deny_read = ~/.ssh,~/.aws\n";
+            output << "    sandbox.allow_write = /tmp/build\n";
+            output << "\n  \033[2mOr: BOLT_SANDBOX_ENABLED=true bolt agent\033[0m\n\n";
+            if (!bwrap_available) {
+                output << "  \033[33mInstall: sudo apt install bubblewrap\033[0m\n\n";
+            }
             continue;
         }
 

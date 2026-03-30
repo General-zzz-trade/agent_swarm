@@ -9,6 +9,7 @@
 #include "../core/config/command_policy_config.h"
 #include "../core/config/ollama_connection_config.h"
 #include "../core/config/policy_config.h"
+#include "../core/config/sandbox_config.h"
 
 struct AppConfig {
     std::string default_model = "qwen3:8b";
@@ -27,6 +28,7 @@ struct AppConfig {
     PolicyConfig policy;
     AgentRuntimeConfig agent_runtime;
     ApprovalConfig approval;
+    SandboxConfig sandbox;
 };
 
 AppConfig load_app_config(const std::filesystem::path& workspace_root);

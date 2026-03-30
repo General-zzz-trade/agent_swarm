@@ -238,6 +238,26 @@ void apply_config_entry(AppConfig* config, const std::string& key, const std::st
         config->approval.mode = parse_approval_mode(key, value);
         return;
     }
+    if (key == "sandbox.enabled") {
+        config->sandbox.enabled = parse_bool(key, value);
+        return;
+    }
+    if (key == "sandbox.auto_allow_bash") {
+        config->sandbox.auto_allow_bash = parse_bool(key, value);
+        return;
+    }
+    if (key == "sandbox.network_enabled") {
+        config->sandbox.network_enabled = parse_bool(key, value);
+        return;
+    }
+    if (key == "sandbox.allow_write") {
+        config->sandbox.allow_write = split_csv(value);
+        return;
+    }
+    if (key == "sandbox.deny_read") {
+        config->sandbox.deny_read = split_csv(value);
+        return;
+    }
 
     constexpr const char* subcommand_prefix = "commands.allowed_subcommands.";
     if (key.rfind(subcommand_prefix, 0) == 0) {
@@ -341,6 +361,8 @@ void load_environment_overrides(AppConfig* config) {
     apply_env_override(config, "BOLT_AGENT_MAX_AUTO_VERIFY_RETRIES",
                        "agent.max_auto_verify_retries");
     apply_env_override(config, "BOLT_APPROVAL_MODE", "approval.mode");
+    apply_env_override(config, "BOLT_SANDBOX_ENABLED", "sandbox.enabled");
+    apply_env_override(config, "BOLT_SANDBOX_NETWORK", "sandbox.network_enabled");
 }
 
 void validate_config(const AppConfig& config) {
