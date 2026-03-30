@@ -25,6 +25,7 @@
 #include "../src/agent/run_command_tool.h"
 #include "../src/agent/permission_policy.h"
 #include "../src/agent/tool_set_factory.h"
+#include "../src/agent/plugin_loader.h"
 #include "../src/app/app_config.h"
 #include "../src/app/static_approval_provider.h"
 #include "../src/app/program_cli.h"
@@ -873,6 +874,173 @@ void test_tool_read_only_classification() {
     expect_true(!wd.allowed || wd.approval_required, "write_file needs approval");
 }
 
+// --- Plugin loader tests ---
+
+void test_plugin_loader_discover_empty() {
+    ScopedTempDir tmp;
+    auto plugins_dir = tmp.path() / "plugins";
+    std::filesystem::create_directories(plugins_dir);
+
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto manifests = loader.discover(plugins_dir);
+    expect_true(manifests.empty(), "no plugins in empty dir");
+}
+
+void test_plugin_loader_discover_nonexistent() {
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto manifests = loader.discover("/tmp/nonexistent_bolt_test_dir_xyz");
+    expect_true(manifests.empty(), "no plugins in nonexistent dir");
+}
+
+void test_plugin_loader_parse_manifest() {
+    ScopedTempDir tmp;
+    auto plugin_dir = tmp.path() / "plugins" / "test-plugin";
+    std::filesystem::create_directories(plugin_dir);
+
+    // Write manifest
+    {
+        std::ofstream f(plugin_dir / "plugin.json");
+        f << R"({
+            "name": "test-plugin",
+            "version": "2.0.0",
+            "description": "A test plugin",
+            "tools": [
+                {
+                    "name": "greet",
+                    "description": "Says hello",
+                    "command": "echo hello",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Name to greet"}
+                        },
+                        "required": ["name"]
+                    },
+                    "read_only": true
+                },
+                {
+                    "name": "farewell",
+                    "description": "Says goodbye",
+                    "command": "echo bye"
+                }
+            ]
+        })";
+    }
+
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto manifests = loader.discover(tmp.path() / "plugins");
+    expect_true(manifests.size() == 1, "found one plugin");
+    expect_equal("test-plugin", manifests[0].name, "plugin name");
+    expect_equal("2.0.0", manifests[0].version, "plugin version");
+    expect_equal("A test plugin", manifests[0].description, "plugin description");
+    expect_true(manifests[0].tools.size() == 2, "two tools defined");
+    expect_equal("greet", manifests[0].tools[0].name, "first tool name");
+    expect_true(manifests[0].tools[0].read_only, "first tool is read-only");
+    expect_equal("farewell", manifests[0].tools[1].name, "second tool name");
+    expect_true(!manifests[0].tools[1].read_only, "second tool not read-only");
+}
+
+void test_plugin_loader_load_tools() {
+    ScopedTempDir tmp;
+    auto plugin_dir = tmp.path() / "plugins" / "my-plugin";
+    std::filesystem::create_directories(plugin_dir);
+
+    {
+        std::ofstream f(plugin_dir / "plugin.json");
+        f << R"({
+            "name": "my-plugin",
+            "tools": [
+                {
+                    "name": "my_tool",
+                    "description": "Does stuff",
+                    "command": "python3 run.py",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "input": {"type": "string", "description": "The input"}
+                        },
+                        "required": ["input"]
+                    }
+                }
+            ]
+        })";
+    }
+
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto tools = loader.load_plugins(tmp.path() / "plugins");
+    expect_true(tools.size() == 1, "loaded one tool");
+    expect_equal("my_tool", tools[0]->name(), "tool name matches");
+    expect_equal("Does stuff", tools[0]->description(), "tool description matches");
+
+    // Check schema
+    auto schema = tools[0]->schema();
+    expect_equal("my_tool", schema.name, "schema name matches");
+    expect_true(schema.parameters.size() == 1, "one schema parameter");
+    expect_equal("input", schema.parameters[0].name, "param name");
+    expect_true(schema.parameters[0].required, "param is required");
+}
+
+void test_plugin_loader_skips_invalid() {
+    ScopedTempDir tmp;
+    auto plugins_dir = tmp.path() / "plugins";
+
+    // Valid plugin
+    auto good_dir = plugins_dir / "good";
+    std::filesystem::create_directories(good_dir);
+    {
+        std::ofstream f(good_dir / "plugin.json");
+        f << R"({"name":"good","tools":[{"name":"t","description":"d","command":"echo ok"}]})";
+    }
+
+    // Invalid JSON
+    auto bad_dir = plugins_dir / "bad";
+    std::filesystem::create_directories(bad_dir);
+    {
+        std::ofstream f(bad_dir / "plugin.json");
+        f << "NOT JSON {{{";
+    }
+
+    // No manifest
+    auto empty_dir = plugins_dir / "empty";
+    std::filesystem::create_directories(empty_dir);
+
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto tools = loader.load_plugins(plugins_dir);
+    expect_true(tools.size() == 1, "only valid plugin loaded");
+    expect_equal("t", tools[0]->name(), "valid tool loaded");
+}
+
+void test_plugin_tool_run_uses_command_runner() {
+    ScopedTempDir tmp;
+    auto plugin_dir = tmp.path() / "plugins" / "runner-test";
+    std::filesystem::create_directories(plugin_dir);
+
+    {
+        std::ofstream f(plugin_dir / "plugin.json");
+        f << R"({"name":"runner-test","tools":[{"name":"stub_tool","description":"test","command":"echo"}]})";
+    }
+
+    auto runner = std::make_shared<StubCommandRunner>();
+    PluginLoader loader(runner);
+
+    auto tools = loader.load_plugin(plugin_dir);
+    expect_true(tools.size() == 1, "loaded one tool");
+
+    auto result = tools[0]->run(R"({"key":"value"})");
+    expect_true(result.success, "stub runner returns success");
+    expect_equal("stub output", result.content, "uses command runner output");
+}
+
 }  // namespace
 
 int main() {
@@ -945,6 +1113,14 @@ int main() {
         // 14. Tool schemas
         {"[SCHEMA] all tools have valid schemas", test_all_tools_have_schemas},
         {"[SCHEMA] read-only classification correct", test_tool_read_only_classification},
+
+        // 15. Plugin loader
+        {"[PLUGIN] discover empty directory", test_plugin_loader_discover_empty},
+        {"[PLUGIN] discover nonexistent directory", test_plugin_loader_discover_nonexistent},
+        {"[PLUGIN] parse manifest with tools", test_plugin_loader_parse_manifest},
+        {"[PLUGIN] load tools from plugins dir", test_plugin_loader_load_tools},
+        {"[PLUGIN] skip invalid plugins", test_plugin_loader_skips_invalid},
+        {"[PLUGIN] tool run uses command runner", test_plugin_tool_run_uses_command_runner},
     };
 
     std::cout << "Starting " << tests.size() << " capability tests...\n" << std::flush;

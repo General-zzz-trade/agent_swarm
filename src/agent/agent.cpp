@@ -106,6 +106,15 @@ Agent::Agent(std::unique_ptr<IModelClient> client,
         throw std::invalid_argument("Agent requires a tool registry");
     }
 
+    // Initialize memory stores
+    const char* home = std::getenv("HOME");
+    if (home) {
+        global_memory_ = MemoryStore(std::filesystem::path(home) / ".bolt" / "memory.json");
+        global_memory_.load();
+    }
+    workspace_memory_ = MemoryStore(workspace_root_ / ".bolt" / "memory.json");
+    workspace_memory_.load();
+
     // Build file index asynchronously in background
     thread_pool_.submit([this]() {
         file_index_.build(workspace_root_);
@@ -557,6 +566,16 @@ std::vector<ChatMessage> Agent::build_chat_messages() const {
     if (!workspace_prompt.empty()) {
         system_prompt << "\n# Project Instructions\n";
         system_prompt << workspace_prompt << "\n";
+    }
+
+    // Inject remembered context from memory stores
+    const std::string global_mem = global_memory_.format_for_prompt();
+    const std::string ws_mem = workspace_memory_.format_for_prompt();
+    if (!global_mem.empty() || !ws_mem.empty()) {
+        system_prompt << "\n# Remembered Context\n";
+        if (!global_mem.empty()) system_prompt << global_mem;
+        if (!ws_mem.empty()) system_prompt << ws_mem;
+        system_prompt << "\n";
     }
 
     messages.push_back({ChatRole::system, system_prompt.str()});

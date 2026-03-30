@@ -1,9 +1,11 @@
 #include "tool_set_factory.h"
 
+#include <cstdlib>
 #include <memory>
 #include <stdexcept>
 
 #include "build_and_test_tool.h"
+#include "plugin_loader.h"
 #include "swarm_coordinator.h"
 #include "calculator_tool.h"
 #include "click_element_tool.h"
@@ -80,5 +82,23 @@ ToolRegistry create_default_tool_registry(
         tools.register_tool(std::make_unique<WebFetchTool>(http_transport));
         tools.register_tool(std::make_unique<WebSearchTool>(http_transport));
     }
+    // Load plugins from workspace and global dirs
+    PluginLoader plugin_loader(command_runner);
+
+    // Workspace plugins: .bolt/plugins/
+    auto ws_plugins_dir = workspace_root / ".bolt" / "plugins";
+    for (auto& tool : plugin_loader.load_plugins(ws_plugins_dir)) {
+        tools.register_tool(std::move(tool));
+    }
+
+    // Global plugins: ~/.bolt/plugins/
+    const char* home = std::getenv("HOME");
+    if (home) {
+        auto global_plugins_dir = std::filesystem::path(home) / ".bolt" / "plugins";
+        for (auto& tool : plugin_loader.load_plugins(global_plugins_dir)) {
+            tools.register_tool(std::move(tool));
+        }
+    }
+
     return tools;
 }

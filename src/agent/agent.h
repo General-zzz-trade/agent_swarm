@@ -23,6 +23,7 @@
 #include "../core/indexing/file_prefetch.h"
 #include "../core/routing/prompt_compressor.h"
 #include "../core/caching/tool_result_cache.h"
+#include "../core/session/memory_store.h"
 #include "action.h"
 #include "execution_step.h"
 #include "failure_tracker.h"
@@ -66,6 +67,10 @@ public:
     /// Access to the prefetch cache for tools that read files.
     FilePrefetchCache& prefetch_cache() { return prefetch_cache_; }
 
+    /// Access to memory stores for persistent cross-session memory.
+    MemoryStore& global_memory() { return global_memory_; }
+    MemoryStore& workspace_memory() { return workspace_memory_; }
+
     // History access for session save/load
     std::vector<ChatMessage> get_chat_messages() const;
     void restore_history(const std::vector<ChatMessage>& messages);
@@ -102,6 +107,8 @@ private:
     FilePrefetchCache prefetch_cache_;
     PromptCompressor prompt_compressor_;
     ToolResultCache tool_result_cache_;
+    MemoryStore global_memory_;
+    MemoryStore workspace_memory_;
     std::function<bool()> cancellation_check_;
     TokenUsage last_usage_;
 

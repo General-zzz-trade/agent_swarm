@@ -24,6 +24,7 @@ add_library(bolt_core STATIC
         src/core/routing/prompt_compressor.cpp
         src/core/caching/tool_result_cache.cpp
         src/core/session/session_store.cpp
+        src/core/session/memory_store.cpp
         src/core/mcp/mcp_server.cpp
         src/core/net/sse_parser.cpp
         src/agent/agent.cpp
@@ -43,6 +44,7 @@ add_library(bolt_core STATIC
         src/agent/open_app_tool.cpp
         src/agent/permission_policy.cpp
         src/agent/plugin_tool.cpp
+        src/agent/plugin_loader.cpp
         src/agent/read_file_tool.cpp
         src/agent/run_command_tool.cpp
         src/agent/search_code_tool.cpp

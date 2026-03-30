@@ -12,6 +12,8 @@
 #include <thread>
 #include <unistd.h>
 
+#include <nlohmann/json.hpp>
+
 #include "../agent/agent.h"
 #include "../core/session/session_store.h"
 #include "setup_wizard.h"
@@ -189,7 +191,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
         "/clear", "/compact", "/model", "/cost",
         "/debug", "/save", "/load", "/sessions", "/delete",
         "/export", "/undo", "/diff", "/status", "/reset",
-        "/sandbox"
+        "/sandbox", "/plugins", "/memory"
     };
     term_input.set_slash_commands(slash_commands);
     if (!workspace_root.empty()) {
@@ -295,6 +297,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "  \033[1m/sessions\033[0m          List saved sessions\n";
             output << "  \033[1m/delete\033[0m \033[2m<id>\033[0m     Delete a session\n";
             output << "  \033[1m/export\033[0m \033[2m[file]\033[0m   Export chat to markdown\n";
+            output << "  \033[1m/memory\033[0m \033[2m[cmd]\033[0m    Manage persistent memory (set/remove/list)\n";
             output << "\n\033[1;35m Context\033[0m\n";
             output << "  \033[1m/clear\033[0m             Clear conversation history\n";
             output << "  \033[1m/compact\033[0m           Compress context to save tokens\n";
@@ -308,6 +311,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "  \033[1m/diff\033[0m              Show git diff\n";
             output << "  \033[1m/sandbox\033[0m           Show sandbox status\n";
             output << "\n\033[1;35m System\033[0m\n";
+            output << "  \033[1m/plugins\033[0m           List installed plugins\n";
             output << "  \033[1m/quit\033[0m              Exit Bolt\n";
             output << "\n\033[1;35m Shortcuts\033[0m\n";
             output << "  \033[2mCtrl+C\033[0m cancel  \033[2mCtrl+L\033[0m clear screen  \033[2mCtrl+D\033[0m exit\n";
@@ -535,6 +539,42 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             continue;
         }
 
+        if (line == "/plugins") {
+            output << "\n\033[1;35m Plugins\033[0m\n\n";
+            auto ws_dir = workspace_root / ".bolt" / "plugins";
+            const char* home_env = std::getenv("HOME");
+            auto global_dir = std::filesystem::path(
+                home_env ? home_env : "") / ".bolt" / "plugins";
+
+            bool found = false;
+            for (const auto& dir : {ws_dir, global_dir}) {
+                if (!std::filesystem::exists(dir)) continue;
+                std::error_code ec;
+                for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                    if (!entry.is_directory()) continue;
+                    auto manifest = entry.path() / "plugin.json";
+                    if (!std::filesystem::exists(manifest)) continue;
+                    try {
+                        std::ifstream mf(manifest);
+                        auto j = nlohmann::json::parse(mf);
+                        std::string pname = j.value("name", entry.path().filename().string());
+                        std::string pdesc = j.value("description", "");
+                        int tool_count = j.contains("tools") ? static_cast<int>(j["tools"].size()) : 0;
+                        output << "  \033[1m" << pname << "\033[0m"
+                               << "  \033[2m" << pdesc << " (" << tool_count << " tools)\033[0m\n";
+                        found = true;
+                    } catch (...) {}
+                }
+            }
+
+            if (!found) {
+                output << "  \033[2mNo plugins installed.\033[0m\n";
+            }
+            output << "\n  \033[2mPlugin dirs: .bolt/plugins/ and ~/.bolt/plugins/\033[0m\n";
+            output << "  \033[2mEach plugin needs a plugin.json manifest.\033[0m\n\n";
+            continue;
+        }
+
         if (line == "/sandbox") {
             output << "\n\033[1;35m Sandbox Status\033[0m\n\n";
             bool bwrap_available = std::filesystem::exists("/usr/bin/bwrap") ||
@@ -548,6 +588,66 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "\n  \033[2mOr: BOLT_SANDBOX_ENABLED=true bolt agent\033[0m\n\n";
             if (!bwrap_available) {
                 output << "  \033[33mInstall: sudo apt install bubblewrap\033[0m\n\n";
+            }
+            continue;
+        }
+
+        if (line == "/memory" || line.rfind("/memory ", 0) == 0) {
+            std::string subcmd = line.size() > 8 ? trim(line.substr(8)) : "";
+
+            if (subcmd.empty() || subcmd == "list") {
+                // List all memories
+                output << "\n\033[1;35m Memory\033[0m\n\n";
+
+                auto global = agent.global_memory().list();
+                auto workspace = agent.workspace_memory().list();
+
+                if (!global.empty()) {
+                    output << "  \033[1mGlobal (~/.bolt/memory.json):\033[0m\n";
+                    for (const auto& e : global) {
+                        output << "    \033[36m" << e.key << "\033[0m = " << e.value << "\n";
+                    }
+                }
+                if (!workspace.empty()) {
+                    output << "  \033[1mWorkspace (.bolt/memory.json):\033[0m\n";
+                    for (const auto& e : workspace) {
+                        output << "    \033[36m" << e.key << "\033[0m = " << e.value << "\n";
+                    }
+                }
+                if (global.empty() && workspace.empty()) {
+                    output << "  \033[2mNo memories saved.\033[0m\n";
+                }
+                output << "\n  \033[2mUsage: /memory set <key> <value>\033[0m\n";
+                output << "  \033[2m       /memory remove <key>\033[0m\n";
+                output << "  \033[2m       /memory clear\033[0m\n\n";
+            } else if (subcmd.rfind("set ", 0) == 0) {
+                auto rest = trim(subcmd.substr(4));
+                auto space = rest.find(' ');
+                if (space != std::string::npos) {
+                    std::string key = rest.substr(0, space);
+                    std::string value = trim(rest.substr(space + 1));
+                    // Workspace memory by default, global if key starts with "global."
+                    if (key.rfind("global.", 0) == 0) {
+                        key = key.substr(7);
+                        agent.global_memory().set(key, value);
+                        output << "\033[2mGlobal memory set: " << key << " = " << value << "\033[0m\n";
+                    } else {
+                        agent.workspace_memory().set(key, value);
+                        output << "\033[2mWorkspace memory set: " << key << " = " << value << "\033[0m\n";
+                    }
+                } else {
+                    output << "\033[33mUsage: /memory set <key> <value>\033[0m\n";
+                }
+            } else if (subcmd.rfind("remove ", 0) == 0) {
+                std::string key = trim(subcmd.substr(7));
+                bool removed = agent.workspace_memory().remove(key) || agent.global_memory().remove(key);
+                if (removed) {
+                    output << "\033[2mRemoved: " << key << "\033[0m\n";
+                } else {
+                    output << "\033[33mNot found: " << key << "\033[0m\n";
+                }
+            } else if (subcmd == "clear") {
+                output << "\033[2mManually delete .bolt/memory.json or ~/.bolt/memory.json\033[0m\n";
             }
             continue;
         }
