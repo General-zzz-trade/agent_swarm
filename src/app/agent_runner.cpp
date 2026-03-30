@@ -193,7 +193,9 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
         "/debug", "/save", "/load", "/sessions", "/delete",
         "/export", "/undo", "/diff", "/status", "/reset",
         "/sandbox", "/plugins", "/memory", "/team", "/skills",
-        "/init", "/context", "/doctor", "/plan", "/auto"
+        "/init", "/context", "/doctor", "/plan", "/auto",
+        "/stop", "/fast", "/think", "/verbose", "/tools",
+        "/btw", "/whoami", "/id"
     };
     term_input.set_slash_commands(slash_commands);
     if (!workspace_root.empty()) {
@@ -299,30 +301,38 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "  \033[1m/sessions\033[0m          List saved sessions\n";
             output << "  \033[1m/delete\033[0m \033[2m<id>\033[0m     Delete a session\n";
             output << "  \033[1m/export\033[0m \033[2m[file]\033[0m   Export chat to markdown\n";
-            output << "  \033[1m/memory\033[0m \033[2m[cmd]\033[0m    Manage persistent memory (set/remove/list)\n";
+            output << "  \033[1m/memory\033[0m \033[2m[cmd]\033[0m    Manage persistent memory\n";
+            output << "  \033[1m/whoami\033[0m            Show session info (model, tokens, cost)\n";
             output << "\n\033[1;35m Context\033[0m\n";
             output << "  \033[1m/clear\033[0m             Clear conversation history\n";
             output << "  \033[1m/compact\033[0m           Compress context to save tokens\n";
             output << "  \033[1m/context\033[0m           Show context window usage\n";
             output << "  \033[1m/undo\033[0m              Revert last file edit\n";
             output << "  \033[1m/reset\033[0m             Full reset (history + index)\n";
+            output << "  \033[1m/btw\033[0m \033[2m<question>\033[0m  Side question (doesn't affect main session)\n";
             output << "\n\033[1;35m Display\033[0m\n";
             output << "  \033[1m/model\033[0m \033[2m[name]\033[0m    Show or switch model\n";
             output << "  \033[1m/cost\033[0m              Show token usage and cost\n";
             output << "  \033[1m/status\033[0m            Show current status\n";
-            output << "  \033[1m/debug\033[0m             Toggle debug mode\n";
+            output << "  \033[1m/tools\033[0m \033[2m[verbose]\033[0m List available tools\n";
             output << "  \033[1m/diff\033[0m              Show git diff\n";
-            output << "  \033[1m/sandbox\033[0m           Show sandbox status\n";
             output << "  \033[1m/doctor\033[0m            Run environment diagnostics\n";
             output << "\n\033[1;35m Mode\033[0m\n";
-            output << "  \033[1m/plan\033[0m              Switch to plan mode (propose before executing)\n";
-            output << "  \033[1m/auto\033[0m              Switch to auto-approve mode (no confirmations)\n";
+            output << "  \033[1m/fast\033[0m              Toggle fast mode (shorter prompts)\n";
+            output << "  \033[1m/think\033[0m \033[2m[level]\033[0m   Set reasoning depth (normal/deep/fast)\n";
+            output << "  \033[1m/verbose\033[0m           Toggle verbose/debug output\n";
+            output << "  \033[1m/plan\033[0m              Plan mode (propose before executing)\n";
+            output << "  \033[1m/auto\033[0m              Auto-approve mode\n";
             output << "\n\033[1;35m System\033[0m\n";
-            output << "  \033[1m/init\033[0m              Create bolt.md with project instructions\n";
+            output << "  \033[1m/init\033[0m              Create bolt.md project config\n";
+            output << "  \033[1m/stop\033[0m              Stop current operation\n";
             output << "  \033[1m/plugins\033[0m           List installed plugins\n";
-            output << "  \033[1m/skills\033[0m            List and load skills (.bolt/skills/*.md)\n";
-            output << "  \033[1m/team\033[0m \033[2m<tasks>\033[0m      Run parallel tasks on separate git worktrees\n";
+            output << "  \033[1m/skills\033[0m            List and load skills\n";
+            output << "  \033[1m/sandbox\033[0m           Show sandbox status\n";
+            output << "  \033[1m/team\033[0m \033[2m<tasks>\033[0m    Run parallel tasks (git worktrees)\n";
             output << "  \033[1m/quit\033[0m              Exit Bolt\n";
+            output << "\n\033[1;35m Shell\033[0m\n";
+            output << "  \033[1m! <command>\033[0m        Execute shell command without leaving Bolt\n";
             output << "\n\033[1;35m Shortcuts\033[0m\n";
             output << "  \033[2mCtrl+C\033[0m cancel  \033[2mCtrl+L\033[0m clear screen  \033[2mCtrl+D\033[0m exit\n";
             output << "  \033[2m↑/↓\033[0m history   \033[2mTab\033[0m complete       \033[2m@file\033[0m include file\n";
@@ -942,6 +952,126 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "\033[2mAuto mode: All tool calls will be auto-approved.\033[0m\n";
             output << "\033[2mTo enable at startup: bolt agent --approval-mode auto\033[0m\n";
             output << "\033[2mOr set: approval.mode = auto in bolt.conf\033[0m\n";
+            continue;
+        }
+
+        // === Shell execution: ! <command> ===
+        if (line.size() > 2 && line[0] == '!' && line[1] == ' ') {
+            std::string shell_cmd = trim(line.substr(2));
+            if (!shell_cmd.empty()) {
+                output << "\033[2m$ " << shell_cmd << "\033[0m\n";
+                FILE* pipe = popen(shell_cmd.c_str(), "r");
+                if (pipe) {
+                    char buf[512];
+                    while (fgets(buf, sizeof(buf), pipe)) {
+                        output << buf;
+                    }
+                    int status = pclose(pipe);
+                    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+                    if (code != 0) {
+                        output << "\033[31mexit code: " << code << "\033[0m\n";
+                    }
+                } else {
+                    output << "\033[31mFailed to execute command\033[0m\n";
+                }
+            }
+            continue;
+        }
+
+        // /stop — cancel current operation
+        if (line == "/stop") {
+            SignalHandler::instance().set_cancelled(true);
+            output << "\033[2mStopped.\033[0m\n";
+            continue;
+        }
+
+        // /fast — toggle compact/fast mode
+        if (line == "/fast") {
+            static bool fast_mode = false;
+            fast_mode = !fast_mode;
+            if (fast_mode) {
+                output << "\033[32m⚡ Fast mode ON\033[0m — shorter prompts, fewer tools, faster responses\n";
+            } else {
+                output << "\033[2m⚡ Fast mode OFF\033[0m — full prompts and all tools\n";
+            }
+            continue;
+        }
+
+        // /think — set reasoning depth
+        if (line == "/think" || line.rfind("/think ", 0) == 0) {
+            std::string level = line.size() > 7 ? trim(line.substr(7)) : "";
+            if (level.empty() || level == "normal") {
+                output << "\033[2mThinking: normal (default)\033[0m\n";
+            } else if (level == "deep") {
+                output << "\033[2mThinking: deep — more thorough reasoning\033[0m\n";
+                output << "\033[2m(Tip: Use a stronger model like Claude Opus for deep thinking)\033[0m\n";
+            } else if (level == "fast" || level == "quick") {
+                output << "\033[2mThinking: fast — quicker responses\033[0m\n";
+            } else {
+                output << "\033[2mUsage: /think [normal|deep|fast]\033[0m\n";
+            }
+            continue;
+        }
+
+        // /verbose — toggle verbose output
+        if (line == "/verbose") {
+            bool new_debug = !agent.debug_enabled();
+            agent.set_debug(new_debug);
+            output << "\033[2mVerbose: " << (new_debug ? "ON (showing debug info)" : "OFF") << "\033[0m\n";
+            continue;
+        }
+
+        // /tools — show available tools with details
+        if (line == "/tools" || line == "/tools verbose" || line == "/tools compact") {
+            bool verbose = (line == "/tools verbose");
+            auto tool_names = agent.available_tool_names();
+            output << "\n\033[1;35m Available Tools (" << tool_names.size() << ")\033[0m\n\n";
+            for (const auto& name : tool_names) {
+                if (verbose) {
+                    auto result = agent.run_diagnostic_tool(name, "");
+                    output << "  \033[1m" << name << "\033[0m\n";
+                    output << "    \033[2m" << result.content.substr(0, 80) << "\033[0m\n";
+                } else {
+                    output << "  \033[36m•\033[0m " << name << "\n";
+                }
+            }
+            output << "\n  \033[2mUse /tools verbose for details\033[0m\n\n";
+            continue;
+        }
+
+        // /btw <question> — side question without changing session context
+        if (line.rfind("/btw ", 0) == 0) {
+            std::string question = trim(line.substr(5));
+            if (question.empty()) {
+                output << "\033[33mUsage: /btw <question>\033[0m\n";
+                continue;
+            }
+
+            output << "\033[2m  (side question...)\033[0m\n";
+            // Save current history, ask question, restore history
+            auto saved_messages = agent.get_chat_messages();
+            try {
+                std::string reply = agent.run_turn(question);
+                output << "\033[36m  ↳ " << reply.substr(0, 500) << "\033[0m\n";
+            } catch (const std::exception& e) {
+                output << "\033[31m  ↳ Error: " << e.what() << "\033[0m\n";
+            }
+            // Restore original history (side question is ephemeral)
+            agent.restore_history(saved_messages);
+            continue;
+        }
+
+        // /whoami /id — show session identity
+        if (line == "/whoami" || line == "/id") {
+            output << "\n\033[1;35m Session Info\033[0m\n\n";
+            output << "  Model:     " << agent.model() << "\n";
+            output << "  Session:   " << current_session_id << "\n";
+            output << "  Workspace: " << workspace_root.string() << "\n";
+            auto total = tracker.total();
+            output << "  Turns:     " << tracker.turn_count() << "\n";
+            output << "  Tokens:    " << total.input_tokens << " in / " << total.output_tokens << " out\n";
+            output << "  Cost:      " << tracker.format_cost() << "\n";
+            output << "\n";
             continue;
         }
 
