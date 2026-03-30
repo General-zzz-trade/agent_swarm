@@ -245,7 +245,11 @@ bool test_write_program(Agent& agent, const std::filesystem::path& ws) {
         char buf[256];
         while (fgets(buf, sizeof(buf), pipe)) compile_output += buf;
         int status = pclose(pipe);
+#ifdef _WIN32
+        bool compiled = (status == 0);
+#else
         bool compiled = (WIFEXITED(status) && WEXITSTATUS(status) == 0);
+#endif
 
         if (compiled) {
             // Run and check output
