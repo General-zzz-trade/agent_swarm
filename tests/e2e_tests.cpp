@@ -230,6 +230,8 @@ Agent make_agent(std::unique_ptr<IModelClient> client,
                  int max_steps = 10) {
     AgentRuntimeConfig runtime;
     runtime.max_model_steps = max_steps;
+    // Disable auto-verify so scripted tests control build_and_test calls explicitly
+    runtime.auto_verify = false;
     auto approval = std::make_shared<StaticApprovalProvider>(true);
     return Agent(std::move(client), approval, workspace, {}, runtime, false,
                  nullptr, make_test_tools(workspace, fs, cmd));

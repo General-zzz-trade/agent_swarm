@@ -29,6 +29,8 @@ private:
     std::atomic<int> terminal_width_{80};
     std::atomic<int> terminal_height_{24};
 
+#ifndef _WIN32
     static void sigint_handler(int sig);
     static void sigwinch_handler(int sig);
+#endif
 };

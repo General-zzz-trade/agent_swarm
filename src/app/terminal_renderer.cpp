@@ -179,11 +179,21 @@ int TerminalRenderer::terminal_width() const {
 }
 
 void TerminalRenderer::update_terminal_width() {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int w = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        int h = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        if (w > 0) terminal_width_ = w;
+        if (h > 0) terminal_height_ = h;
+    }
+#else
     struct winsize ws {};
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
         terminal_width_ = ws.ws_col;
         terminal_height_ = ws.ws_row > 0 ? ws.ws_row : 24;
     }
+#endif
 }
 
 // ---------------------------------------------------------------------------

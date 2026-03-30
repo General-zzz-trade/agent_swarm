@@ -1,5 +1,9 @@
 #include "signal_handler.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 SignalHandler& SignalHandler::instance() {
     static SignalHandler handler;
     return handler;
@@ -8,6 +12,15 @@ SignalHandler& SignalHandler::instance() {
 void SignalHandler::install() {
     update_dimensions();
 
+#ifdef _WIN32
+    ::SetConsoleCtrlHandler([](DWORD type) -> BOOL {
+        if (type == CTRL_C_EVENT) {
+            instance().cancelled_.store(true, std::memory_order_release);
+            return TRUE;
+        }
+        return FALSE;
+    }, TRUE);
+#else
     struct sigaction sa_int{};
     sa_int.sa_handler = sigint_handler;
     sigemptyset(&sa_int.sa_mask);
@@ -19,6 +32,7 @@ void SignalHandler::install() {
     sigemptyset(&sa_winch.sa_mask);
     sa_winch.sa_flags = 0;
     sigaction(SIGWINCH, &sa_winch, nullptr);
+#endif
 }
 
 bool SignalHandler::is_cancelled() const {
@@ -50,6 +64,15 @@ int SignalHandler::terminal_height() const {
 }
 
 void SignalHandler::update_dimensions() {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int w = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        int h = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        if (w > 0) terminal_width_.store(w, std::memory_order_relaxed);
+        if (h > 0) terminal_height_.store(h, std::memory_order_relaxed);
+    }
+#else
     struct winsize ws{};
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
         if (ws.ws_col > 0) {
@@ -59,8 +82,10 @@ void SignalHandler::update_dimensions() {
             terminal_height_.store(ws.ws_row, std::memory_order_relaxed);
         }
     }
+#endif
 }
 
+#ifndef _WIN32
 void SignalHandler::sigint_handler(int /*sig*/) {
     instance().cancelled_.store(true, std::memory_order_release);
 }
@@ -68,3 +93,4 @@ void SignalHandler::sigint_handler(int /*sig*/) {
 void SignalHandler::sigwinch_handler(int /*sig*/) {
     instance().resize_pending_.store(true, std::memory_order_release);
 }
+#endif

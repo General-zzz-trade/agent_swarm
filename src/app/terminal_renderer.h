@@ -2,7 +2,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/ioctl.h>
 #include <unistd.h>
 #endif

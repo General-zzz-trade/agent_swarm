@@ -2,7 +2,13 @@
 
 #include <algorithm>
 #include <cstring>
+
+#ifdef _WIN32
+#include <io.h>
+#include <conio.h>
+#else
 #include <unistd.h>
+#endif
 
 // ============================================================================
 // Construction / Destruction
@@ -10,10 +16,14 @@
 
 TerminalInput::TerminalInput(int input_fd, std::ostream& output)
     : input_fd_(input_fd), output_(output) {
+#ifdef _WIN32
+    is_tty_ = ::_isatty(input_fd_) != 0;
+#else
     is_tty_ = ::isatty(input_fd_) != 0;
     if (is_tty_) {
         ::tcgetattr(input_fd_, &original_termios_);
     }
+#endif
 }
 
 TerminalInput::~TerminalInput() {
@@ -155,7 +165,11 @@ char TerminalInput::read_single_key() {
     }
     enable_raw_mode();
     char c = 0;
+#ifdef _WIN32
+    c = static_cast<char>(::_getch());
+#else
     ::read(input_fd_, &c, 1);
+#endif
     disable_raw_mode();
     return c;
 }
@@ -197,6 +211,7 @@ bool TerminalInput::is_tty() const {
 
 void TerminalInput::enable_raw_mode() {
     if (!is_tty_ || raw_mode_active_) return;
+#ifndef _WIN32
     termios raw = original_termios_;
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     // Leave c_oflag alone so output processing (e.g. \n -> \r\n) stays intact
@@ -205,12 +220,15 @@ void TerminalInput::enable_raw_mode() {
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     ::tcsetattr(input_fd_, TCSAFLUSH, &raw);
+#endif
     raw_mode_active_ = true;
 }
 
 void TerminalInput::disable_raw_mode() {
     if (!is_tty_ || !raw_mode_active_) return;
+#ifndef _WIN32
     ::tcsetattr(input_fd_, TCSAFLUSH, &original_termios_);
+#endif
     raw_mode_active_ = false;
 }
 
@@ -219,14 +237,37 @@ void TerminalInput::disable_raw_mode() {
 // ============================================================================
 
 int TerminalInput::read_key() {
+#ifdef _WIN32
+    int c = ::_getch();
+    if (c == EOF) return KEY_CTRL_D;
+    if (c == 0 || c == 0xE0) {
+        // Extended key — read second byte
+        int ext = ::_getch();
+        switch (ext) {
+            case 72: return KEY_UP;
+            case 80: return KEY_DOWN;
+            case 75: return KEY_LEFT;
+            case 77: return KEY_RIGHT;
+            case 71: return KEY_HOME;
+            case 79: return KEY_END;
+            case 83: return KEY_DELETE;
+        }
+        return KEY_ESCAPE;
+    }
+    return c;
+#else
     char c;
     int nread = ::read(input_fd_, &c, 1);
     if (nread <= 0) return KEY_CTRL_D;  // EOF
     if (c == KEY_ESCAPE) return read_escape_sequence();
     return static_cast<unsigned char>(c);
+#endif
 }
 
 int TerminalInput::read_escape_sequence() {
+#ifdef _WIN32
+    return KEY_ESCAPE;
+#else
     char seq[3];
     if (::read(input_fd_, &seq[0], 1) != 1) return KEY_ESCAPE;
     if (::read(input_fd_, &seq[1], 1) != 1) return KEY_ESCAPE;
@@ -259,6 +300,7 @@ int TerminalInput::read_escape_sequence() {
         }
     }
     return KEY_ESCAPE;
+#endif
 }
 
 // ============================================================================
