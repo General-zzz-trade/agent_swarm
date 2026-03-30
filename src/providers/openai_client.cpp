@@ -177,6 +177,13 @@ ChatMessage OpenAiClient::parse_response(const std::string& body) const {
         result.content = msg["content"].get<std::string>();
     }
 
+    // Support reasoning/thinking models (Kimi K2.5, DeepSeek R1, o3, etc.)
+    // These models put reasoning in "reasoning_content" and final answer in "content".
+    // When content is empty (thinking consumed tokens or model style), use reasoning.
+    if (result.content.empty() && msg.contains("reasoning_content") && !msg["reasoning_content"].is_null()) {
+        result.content = msg["reasoning_content"].get<std::string>();
+    }
+
     if (msg.contains("tool_calls")) {
         for (const auto& tc : msg["tool_calls"]) {
             ToolCallRequest call;

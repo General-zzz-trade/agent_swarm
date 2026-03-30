@@ -131,6 +131,9 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.base_url = config.moonshot_base_url;
         cfg.api_key = get_env("MOONSHOT_API_KEY");
         cfg.model = model_override.empty() ? config.moonshot_model : model_override;
+        // Kimi K2.5 uses thinking mode: requires temperature=1, needs more tokens
+        cfg.max_tokens = 16384;
+        cfg.temperature = 1.0;  // kimi-k2.5 only allows temperature=1
 
         if (cfg.api_key.empty()) {
             throw_missing_key("moonshot", "MOONSHOT_API_KEY", "https://platform.moonshot.cn/console/api-keys");
