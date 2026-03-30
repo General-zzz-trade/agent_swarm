@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -442,6 +443,12 @@ SetupResult run_wizard_flow(const std::string& current_provider,
 
                     std::ofstream of(env_path);
                     of << new_content.str();
+                    of.close();
+
+                    // Restrict file permissions (owner-only read/write)
+#ifndef _WIN32
+                    chmod(env_path.c_str(), 0600);
+#endif
 
                     // Also set in current process environment
 #ifdef _WIN32
