@@ -35,6 +35,7 @@ struct ChatMessage {
     std::string content;
     std::string name;            // for tool role: which tool produced this
     std::string tool_call_id;    // for tool role: which tool_call this responds to
+    std::string reasoning_content;  // for thinking models (kimi-k2.5, deepseek-r1, o3)
     std::vector<ToolCallRequest> tool_calls;  // for assistant role: requested tool calls
     TokenUsage usage;  // token usage from API response
 

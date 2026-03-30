@@ -9,6 +9,8 @@ struct Message {
     std::string role;
     std::string content;
     std::string name;
+    std::string tool_call_id;
+    std::string reasoning_content;  // For thinking models (kimi-k2.5, deepseek-r1)
     std::vector<ToolCallRequest> tool_calls;  // For assistant messages with tool calls
 };
 

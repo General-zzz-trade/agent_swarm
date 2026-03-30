@@ -49,6 +49,10 @@ json message_to_json(const ChatMessage& msg) {
         } else {
             j["content"] = nullptr;
         }
+        // Include reasoning_content for thinking models (kimi-k2.5, deepseek-r1)
+        if (!msg.reasoning_content.empty()) {
+            j["reasoning_content"] = msg.reasoning_content;
+        }
         json tool_calls = json::array();
         for (const auto& tc : msg.tool_calls) {
             tool_calls.push_back({
@@ -66,6 +70,10 @@ json message_to_json(const ChatMessage& msg) {
         j["tool_call_id"] = msg.tool_call_id;
     } else {
         j["content"] = msg.content;
+        // Include reasoning_content for thinking model assistant messages
+        if (msg.role == ChatRole::assistant && !msg.reasoning_content.empty()) {
+            j["reasoning_content"] = msg.reasoning_content;
+        }
     }
 
     return j;
@@ -178,10 +186,13 @@ ChatMessage OpenAiClient::parse_response(const std::string& body) const {
     }
 
     // Support reasoning/thinking models (Kimi K2.5, DeepSeek R1, o3, etc.)
-    // These models put reasoning in "reasoning_content" and final answer in "content".
-    // When content is empty (thinking consumed tokens or model style), use reasoning.
-    if (result.content.empty() && msg.contains("reasoning_content") && !msg["reasoning_content"].is_null()) {
-        result.content = msg["reasoning_content"].get<std::string>();
+    // Preserve reasoning_content for re-sending in multi-turn conversations.
+    if (msg.contains("reasoning_content") && !msg["reasoning_content"].is_null()) {
+        result.reasoning_content = msg["reasoning_content"].get<std::string>();
+    }
+    // When content is empty, use reasoning as the reply text.
+    if (result.content.empty() && !result.reasoning_content.empty()) {
+        result.content = result.reasoning_content;
     }
 
     if (msg.contains("tool_calls")) {

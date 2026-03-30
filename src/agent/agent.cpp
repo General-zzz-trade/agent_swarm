@@ -12,6 +12,7 @@
 #include "action_parser.h"
 #include "skill_loader.h"
 #include "workspace_prompt.h"
+#include "../core/routing/model_router.h"
 
 namespace {
 
@@ -27,7 +28,13 @@ std::string summarize_message(const Message& message) {
 }
 
 std::size_t estimate_message_size(const Message& message) {
-    return message.role.size() + message.name.size() + message.content.size() + 32;
+    std::size_t size =
+        message.role.size() + message.name.size() + message.tool_call_id.size() +
+        message.content.size() + 32;
+    for (const auto& tool_call : message.tool_calls) {
+        size += tool_call.id.size() + tool_call.name.size() + tool_call.arguments.size();
+    }
+    return size;
 }
 
 std::string trim_copy(const std::string& value) {
@@ -90,6 +97,15 @@ bool detect_small_model(const std::string& model_name) {
     return false;
 }
 
+void request_router_failure_escalation(const std::unique_ptr<IModelClient>& client) {
+    if (client == nullptr) {
+        return;
+    }
+    if (auto* router = dynamic_cast<ModelRouter*>(client.get())) {
+        router->request_failure_escalation();
+    }
+}
+
 }  // namespace
 
 Agent::Agent(std::unique_ptr<IModelClient> client,
@@ -132,11 +148,17 @@ Agent::Agent(std::unique_ptr<IModelClient> client,
     workspace_memory_.load();
 
     // Build file index asynchronously in background
-    thread_pool_.submit([this]() {
+    file_index_task_ = thread_pool_.submit([this]() {
         file_index_.build(workspace_root_);
         log_debug("FileIndex", "Indexed " + std::to_string(file_index_.file_count()) +
                   " files, " + std::to_string(file_index_.total_bytes()) + " bytes");
     });
+}
+
+Agent::~Agent() {
+    if (file_index_task_.valid()) {
+        file_index_task_.wait();
+    }
 }
 
 std::string Agent::run_turn(const std::string& user_input) {
@@ -310,9 +332,14 @@ std::vector<ChatMessage> Agent::get_chat_messages() const {
         ChatMessage cm;
         if (msg.role == "user") cm.role = ChatRole::user;
         else if (msg.role == "assistant") cm.role = ChatRole::assistant;
-        else if (msg.role == "tool") { cm.role = ChatRole::tool; cm.name = msg.name; }
+        else if (msg.role == "tool") {
+            cm.role = ChatRole::tool;
+            cm.name = msg.name;
+            cm.tool_call_id = msg.tool_call_id;
+        }
         else cm.role = ChatRole::user;
         cm.content = msg.content;
+        cm.tool_calls = msg.tool_calls;
         messages.push_back(std::move(cm));
     }
     return messages;
@@ -325,6 +352,8 @@ void Agent::restore_history(const std::vector<ChatMessage>& messages) {
         msg.role = chat_role_to_string(cm.role);
         msg.content = cm.content;
         msg.name = cm.name;
+        msg.tool_call_id = cm.tool_call_id;
+        msg.tool_calls = cm.tool_calls;
         history_.push_back(std::move(msg));
     }
     last_execution_trace_.clear();
@@ -341,6 +370,8 @@ void Agent::compact_history() {
         msg.role = chat_role_to_string(cm.role);
         msg.content = cm.content;
         msg.name = cm.name;
+        msg.tool_call_id = cm.tool_call_id;
+        msg.tool_calls = cm.tool_calls;
         history_.push_back(std::move(msg));
     }
 }
@@ -690,6 +721,7 @@ std::vector<ChatMessage> Agent::build_chat_messages() const {
             ChatMessage am;
             am.role = ChatRole::assistant;
             am.content = msg.content;
+            am.reasoning_content = msg.reasoning_content;  // For thinking models
             am.tool_calls = msg.tool_calls;  // Restore tool_calls for tool_call_id matching
             messages.push_back(std::move(am));
         } else if (msg.role == "tool") {
@@ -697,19 +729,22 @@ std::vector<ChatMessage> Agent::build_chat_messages() const {
             tool_msg.role = ChatRole::tool;
             tool_msg.content = msg.content;
             tool_msg.name = msg.name;
-            // Search backwards for the assistant message that contains the matching tool_call
-            for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
-                if (it->role == ChatRole::assistant && !it->tool_calls.empty()) {
-                    for (const auto& tc : it->tool_calls) {
-                        if (tc.name == msg.name) {
-                            tool_msg.tool_call_id = tc.id;
-                            break;
+            tool_msg.tool_call_id = msg.tool_call_id;
+            if (tool_msg.tool_call_id.empty()) {
+                // Backward-compatible fallback for older history entries that only stored the tool name.
+                for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+                    if (it->role == ChatRole::assistant && !it->tool_calls.empty()) {
+                        for (const auto& tc : it->tool_calls) {
+                            if (tc.name == msg.name) {
+                                tool_msg.tool_call_id = tc.id;
+                                break;
+                            }
                         }
+                        if (!tool_msg.tool_call_id.empty()) break;
                     }
-                    if (!tool_msg.tool_call_id.empty()) break;
+                    // Stop searching once we hit a user message (don't cross conversation turns)
+                    if (it->role == ChatRole::user) break;
                 }
-                // Stop searching once we hit a user message (don't cross conversation turns)
-                if (it->role == ChatRole::user) break;
             }
             messages.push_back(std::move(tool_msg));
         } else if (msg.role == "system") {
@@ -836,6 +871,7 @@ std::string Agent::run_turn_structured(const std::string& user_input,
         Message assistant_msg;
         assistant_msg.role = "assistant";
         assistant_msg.content = response.content;
+        assistant_msg.reasoning_content = response.reasoning_content;  // For thinking models
         assistant_msg.tool_calls = response.tool_calls;  // Preserve for tool_call_id matching
         push_history(std::move(assistant_msg));
 
@@ -959,7 +995,12 @@ std::string Agent::run_turn_structured(const std::string& user_input,
                 history_content = results[i].observation.content;
             }
 
-            push_history({"tool", history_content, history_name});
+            Message tool_message;
+            tool_message.role = "tool";
+            tool_message.content = history_content;
+            tool_message.name = history_name;
+            tool_message.tool_call_id = response.tool_calls[i].id;
+            push_history(std::move(tool_message));
 
             // Track failures for recovery
             if (results[i].step.status == ExecutionStepStatus::failed ||
@@ -981,6 +1022,7 @@ std::string Agent::run_turn_structured(const std::string& user_input,
         if (failure_tracker_.is_stuck()) {
             const std::string diagnostic = failure_tracker_.diagnostic();
             log_debug("Failure Recovery", diagnostic);
+            request_router_failure_escalation(client_);
             push_history({"system", diagnostic, ""});
         }
 
@@ -1028,6 +1070,7 @@ std::string Agent::run_turn_structured(const std::string& user_input,
                             notify_trace_updated();
 
                             // Inject error into history so model sees it and fixes
+                            request_router_failure_escalation(client_);
                             std::string error_msg =
                                 "AUTO_VERIFY: build_and_test failed after your edit (attempt " +
                                 std::to_string(auto_verify_count_) + "/" +
@@ -1044,7 +1087,7 @@ std::string Agent::run_turn_structured(const std::string& user_input,
                             notify_trace_updated();
 
                             push_history({"tool", "TOOL_OK\nAUTO_VERIFY: build_and_test passed.",
-                                          "build_and_test"});
+                                          "build_and_test", ""});
                             auto_verify_count_ = 0;
                         }
                     } catch (const std::exception& e) {
