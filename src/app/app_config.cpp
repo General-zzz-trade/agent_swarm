@@ -485,7 +485,42 @@ void validate_config(const AppConfig& config) {
 
 }  // namespace
 
+void load_bolt_env_file() {
+    // Load API keys from ~/.bolt/env (saved by setup wizard)
+    const char* home = std::getenv("HOME");
+#ifdef _WIN32
+    if (!home) home = std::getenv("USERPROFILE");
+#endif
+    if (!home) return;
+
+    auto env_path = std::filesystem::path(home) / ".bolt" / "env";
+    if (!std::filesystem::exists(env_path)) return;
+
+    std::ifstream f(env_path);
+    std::string line;
+    while (std::getline(f, line)) {
+        line = trim_copy(line);
+        if (line.empty() || line[0] == '#') continue;
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = trim_copy(line.substr(0, eq));
+        std::string value = trim_copy(line.substr(eq + 1));
+        if (key.empty() || value.empty()) continue;
+        // Only set if not already in environment (env vars take precedence)
+        if (!std::getenv(key.c_str())) {
+#ifdef _WIN32
+            _putenv_s(key.c_str(), value.c_str());
+#else
+            setenv(key.c_str(), value.c_str(), 0);
+#endif
+        }
+    }
+}
+
 AppConfig load_app_config(const std::filesystem::path& workspace_root) {
+    // Load saved API keys from ~/.bolt/env before anything else
+    load_bolt_env_file();
+
     AppConfig config;
     // Load global user config first (lowest priority)
     load_setup_config(config);

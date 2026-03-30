@@ -53,57 +53,60 @@ struct ProviderInfo {
 
 std::vector<ProviderInfo> get_providers() {
     return {
-        {"ollama", "Ollama", "Local models, no API key needed", "", {
-            {"qwen3:8b", "Default, good balance"},
-            {"llama3:8b", "Meta Llama 3"},
-            {"codellama:13b", "Code-focused"},
+        {"ollama", "Ollama", "Local models, no API key", "", {
+            {"qwen3:8b", "Qwen 3 8B — good balance"},
+            {"llama3:8b", "Meta Llama 3 8B"},
+            {"deepseek-r1:8b", "DeepSeek R1 reasoning"},
+            {"codellama:13b", "Code-focused 13B"},
         }},
-        {"openai", "OpenAI", "GPT-4o, GPT-4-turbo (requires OPENAI_API_KEY)", "OPENAI_API_KEY", {
-            {"gpt-4o", "Latest, best balance"},
-            {"gpt-4-turbo", "Fast, capable"},
-            {"gpt-4o-mini", "Cheapest"},
-            {"o3-mini", "Reasoning model"},
+        {"openai", "OpenAI", "GPT-4o, o3, o4-mini", "OPENAI_API_KEY", {
+            {"gpt-4o", "GPT-4o — best balance ($2.5/$10/M)"},
+            {"gpt-4o-mini", "GPT-4o Mini — cheap ($0.15/$0.6/M)"},
+            {"o3-mini", "o3-mini — reasoning ($1.1/$4.4/M)"},
+            {"o4-mini", "o4-mini — latest reasoning"},
+            {"gpt-4.1", "GPT-4.1 — code-focused"},
         }},
-        {"claude", "Claude", "Sonnet, Opus, Haiku (requires ANTHROPIC_API_KEY)", "ANTHROPIC_API_KEY", {
-            {"claude-sonnet-4-20250514", "Best balance (recommended)"},
-            {"claude-opus-4-20250514", "Most capable"},
-            {"claude-haiku-4-5-20251001", "Fastest, cheapest"},
+        {"claude", "Claude (Anthropic)", "Sonnet 4.6, Opus 4.6, Haiku 4.5", "ANTHROPIC_API_KEY", {
+            {"claude-sonnet-4-6-20250217", "Sonnet 4.6 — best balance ($3/$15/M)"},
+            {"claude-opus-4-6-20250205", "Opus 4.6 — most capable ($15/$75/M)"},
+            {"claude-haiku-4-5-20251001", "Haiku 4.5 — fastest ($1/$5/M)"},
         }},
-        {"gemini", "Gemini", "Flash, Pro (requires GEMINI_API_KEY)", "GEMINI_API_KEY", {
-            {"gemini-2.0-flash", "Fast, cheap"},
-            {"gemini-2.0-pro", "Most capable"},
-            {"gemini-1.5-pro", "Large context"},
+        {"gemini", "Gemini (Google)", "Flash, Pro", "GEMINI_API_KEY", {
+            {"gemini-2.0-flash", "Flash 2.0 — fast, cheap"},
+            {"gemini-2.0-pro", "Pro 2.0 — most capable"},
+            {"gemini-2.5-pro-preview", "Pro 2.5 Preview — latest"},
         }},
-        {"groq", "Groq", "Fast inference (requires GROQ_API_KEY)", "GROQ_API_KEY", {
-            {"llama-3.3-70b-versatile", "Best quality"},
-            {"llama-3.1-8b-instant", "Fastest"},
-            {"mixtral-8x7b-32768", "Good balance"},
+        {"groq", "Groq", "Ultra-fast inference", "GROQ_API_KEY", {
+            {"llama-3.3-70b-versatile", "Llama 3.3 70B — best quality"},
+            {"llama-3.1-8b-instant", "Llama 3.1 8B — fastest"},
+            {"mixtral-8x7b-32768", "Mixtral 8x7B — 32K context"},
         }},
-        {"deepseek", "DeepSeek", "DeepSeek-V3, R1 reasoning (requires DEEPSEEK_API_KEY)", "DEEPSEEK_API_KEY", {
-            {"deepseek-chat", "V3 — best balance"},
-            {"deepseek-reasoner", "R1 — reasoning model"},
+        {"deepseek", "DeepSeek (深度求索)", "V3.2, R1 — 超低价格", "DEEPSEEK_API_KEY", {
+            {"deepseek-chat", "DeepSeek-V3.2 — 通用 ($0.27/$1.1/M)"},
+            {"deepseek-reasoner", "DeepSeek-R1 — 推理 ($0.55/$2.19/M)"},
         }},
-        {"qwen", "Qwen", "Alibaba Qwen models (requires DASHSCOPE_API_KEY)", "DASHSCOPE_API_KEY", {
-            {"qwen-plus", "Good balance"},
-            {"qwen-max", "Most capable"},
-            {"qwen-turbo", "Fastest, cheapest"},
-            {"qwen3-235b-a22b", "Latest Qwen 3"},
+        {"qwen", "通义千问 (Qwen)", "阿里云百炼 — Qwen3.5", "DASHSCOPE_API_KEY", {
+            {"qwen-plus", "Qwen-Plus — 性价比之选"},
+            {"qwen-max", "Qwen-Max — 最强能力"},
+            {"qwen-turbo", "Qwen-Turbo — 极速低价"},
+            {"qwen3.5-plus", "Qwen3.5-Plus — 最新 1M 上下文"},
         }},
-        {"zhipu", "GLM", "Zhipu GLM-4 models (requires ZHIPU_API_KEY)", "ZHIPU_API_KEY", {
-            {"glm-4-flash", "Free tier, fast"},
-            {"glm-4-plus", "Most capable"},
-            {"glm-4-long", "200K context"},
+        {"zhipu", "智谱 GLM", "GLM-4 / GLM-5 系列", "ZHIPU_API_KEY", {
+            {"glm-4-flash", "GLM-4-Flash — 免费额度"},
+            {"glm-4-plus", "GLM-4-Plus — 强能力"},
+            {"glm-4-long", "GLM-4-Long — 200K 上下文"},
+            {"glm-4-airx", "GLM-4-AirX — 极速推理"},
         }},
-        {"moonshot", "Moonshot (Kimi)", "Moonshot models (requires MOONSHOT_API_KEY)", "MOONSHOT_API_KEY", {
-            {"moonshot-v1-8k", "Fast, 8K context"},
-            {"moonshot-v1-32k", "32K context"},
-            {"moonshot-v1-128k", "128K long context"},
+        {"moonshot", "月之暗面 (Kimi)", "Kimi K2.5 / moonshot-v1", "MOONSHOT_API_KEY", {
+            {"moonshot-v1-128k", "moonshot-v1-128k — 推荐，128K上下文"},
+            {"moonshot-v1-32k", "moonshot-v1-32k — 32K上下文"},
+            {"moonshot-v1-8k", "moonshot-v1-8k — 快速，8K上下文"},
         }},
-        {"baichuan", "Baichuan", "Baichuan models (requires BAICHUAN_API_KEY)", "BAICHUAN_API_KEY", {
-            {"Baichuan4", "Latest, most capable"},
-            {"Baichuan3-Turbo", "Fast"},
+        {"baichuan", "百川智能", "Baichuan4", "BAICHUAN_API_KEY", {
+            {"Baichuan4", "Baichuan4 — 最新最强"},
+            {"Baichuan3-Turbo", "Baichuan3-Turbo — 快速"},
         }},
-        {"doubao", "Doubao", "ByteDance VolcEngine (requires VOLC_API_KEY)", "VOLC_API_KEY", {
+        {"doubao", "豆包 (字节跳动)", "火山引擎方舟", "VOLC_API_KEY", {
             {"doubao-pro-32k", "Pro, 32K context"},
             {"doubao-lite-32k", "Lite, very cheap"},
         }},
@@ -394,6 +397,72 @@ SetupResult run_wizard_flow(const std::string& current_provider,
     std::cout << "\n";
 
     std::string model = select_model_for_provider(selected, current_model);
+
+    // Prompt for API key if needed and not already set
+    if (!selected.env_var.empty()) {
+        const char* existing = std::getenv(selected.env_var.c_str());
+        bool has_key = existing && std::string(existing).size() > 5;
+
+        if (!has_key) {
+            std::cout << "\n";
+            std::cout << " " << kBoldWhite << "API Key Setup" << kReset << "\n\n";
+            std::cout << "   Paste your " << kBold << selected.env_var << kReset << " below.\n";
+            std::cout << "   " << kDim << "(Get one at the provider's website, then paste here)" << kReset << "\n\n";
+            std::cout << " " << kBoldWhite << selected.env_var << "=  " << kReset << std::flush;
+
+            std::string api_key = read_line_stdin();
+
+            if (!api_key.empty() && api_key.size() > 5) {
+                // Write to ~/.bolt/env file for persistence
+                const char* home = std::getenv("HOME");
+#ifdef _WIN32
+                if (!home) home = std::getenv("USERPROFILE");
+#endif
+                if (home) {
+                    auto env_path = std::filesystem::path(home) / ".bolt" / "env";
+                    std::filesystem::create_directories(env_path.parent_path());
+
+                    // Read existing env file
+                    std::string existing_content;
+                    if (std::filesystem::exists(env_path)) {
+                        std::ifstream ef(env_path);
+                        existing_content.assign(std::istreambuf_iterator<char>(ef), {});
+                    }
+
+                    // Remove old entry for this key if exists
+                    std::ostringstream new_content;
+                    std::istringstream old_stream(existing_content);
+                    std::string line;
+                    while (std::getline(old_stream, line)) {
+                        if (line.find(selected.env_var + "=") != 0) {
+                            new_content << line << "\n";
+                        }
+                    }
+                    new_content << selected.env_var << "=" << api_key << "\n";
+
+                    std::ofstream of(env_path);
+                    of << new_content.str();
+
+                    // Also set in current process environment
+#ifdef _WIN32
+                    _putenv_s(selected.env_var.c_str(), api_key.c_str());
+#else
+                    setenv(selected.env_var.c_str(), api_key.c_str(), 1);
+#endif
+
+                    std::cout << " " << kBoldGreen << "✓" << kReset
+                              << " Key saved to ~/.bolt/env\n";
+                    std::cout << "   " << kDim << "To use in new terminals: source ~/.bolt/env" << kReset << "\n";
+                }
+            } else {
+                std::cout << " " << kDim << "Skipped. Set it later:" << kReset << "\n";
+                std::cout << "   " << kBold << "export " << selected.env_var << "=your-key" << kReset << "\n";
+            }
+        } else {
+            std::cout << "\n " << kBoldGreen << "✓" << kReset
+                      << " " << selected.env_var << " already set\n";
+        }
+    }
 
     SetupResult result;
     result.provider = selected.id;
