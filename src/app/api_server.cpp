@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -136,6 +137,7 @@ void send_response(SOCKET socket, int status_code, const std::string& status_tex
     response << "HTTP/1.1 " << status_code << " " << status_text << "\r\n";
     response << "Content-Type: " << content_type << "\r\n";
     response << "Content-Length: " << body.size() << "\r\n";
+    response << "Access-Control-Allow-Origin: *\r\n";
     response << "Cache-Control: no-store\r\n";
     response << "Connection: close\r\n\r\n";
     response << body;
@@ -318,6 +320,89 @@ int ApiServer::run(std::ostream& output) {
                               json{{"ok", false}, {"error", "Too many requests"}}.dump());
                     return;
                 }
+
+                // === Static file serving (React UI) ===
+                if (request.method == "GET" && request.path.rfind("/api/", 0) != 0) {
+                    // Serve static files from web-dist/ or bolt-ui web-dist
+                    std::string file_path = request.path;
+                    if (file_path == "/") file_path = "/index.html";
+
+                    // Try multiple asset directories
+                    std::vector<std::filesystem::path> search_dirs = {
+                        workspace_root_ / "web-dist",
+                        workspace_root_ / "bolt-ui" / "web-dist",
+                    };
+                    // Also check relative to executable
+                    auto exe_path = std::filesystem::path("/usr/local/share/bolt/web-dist");
+                    if (std::filesystem::exists(exe_path)) search_dirs.push_back(exe_path);
+
+                    bool served = false;
+                    for (const auto& dir : search_dirs) {
+                        auto full_path = dir / file_path.substr(1);
+                        if (std::filesystem::exists(full_path) && std::filesystem::is_regular_file(full_path)) {
+                            // Read file
+                            std::ifstream file(full_path, std::ios::binary);
+                            std::string content((std::istreambuf_iterator<char>(file)),
+                                                 std::istreambuf_iterator<char>());
+
+                            // Detect content type
+                            std::string ct = "application/octet-stream";
+                            std::string ext = full_path.extension().string();
+                            if (ext == ".html") ct = "text/html; charset=utf-8";
+                            else if (ext == ".css") ct = "text/css; charset=utf-8";
+                            else if (ext == ".js") ct = "application/javascript; charset=utf-8";
+                            else if (ext == ".json") ct = "application/json";
+                            else if (ext == ".svg") ct = "image/svg+xml";
+                            else if (ext == ".png") ct = "image/png";
+                            else if (ext == ".ico") ct = "image/x-icon";
+
+                            // Add CORS headers for dev mode
+                            std::ostringstream resp;
+                            resp << "HTTP/1.1 200 OK\r\n";
+                            resp << "Content-Type: " << ct << "\r\n";
+                            resp << "Content-Length: " << content.size() << "\r\n";
+                            resp << "Access-Control-Allow-Origin: *\r\n";
+                            resp << "Cache-Control: public, max-age=3600\r\n";
+                            resp << "Connection: close\r\n\r\n";
+                            resp << content;
+                            send_all(client_socket->get(), resp.str());
+                            served = true;
+                            break;
+                        }
+                    }
+
+                    if (served) return;
+
+                    // SPA fallback: serve index.html for unknown routes
+                    for (const auto& dir : search_dirs) {
+                        auto index = dir / "index.html";
+                        if (std::filesystem::exists(index)) {
+                            std::ifstream file(index, std::ios::binary);
+                            std::string content((std::istreambuf_iterator<char>(file)),
+                                                 std::istreambuf_iterator<char>());
+                            send_response(client_socket->get(), 200, "OK",
+                                         "text/html; charset=utf-8", content);
+                            served = true;
+                            break;
+                        }
+                    }
+                    if (served) return;
+                }
+
+                // CORS preflight
+                if (request.method == "OPTIONS") {
+                    std::ostringstream resp;
+                    resp << "HTTP/1.1 204 No Content\r\n";
+                    resp << "Access-Control-Allow-Origin: *\r\n";
+                    resp << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
+                    resp << "Access-Control-Allow-Headers: Content-Type\r\n";
+                    resp << "Access-Control-Max-Age: 86400\r\n";
+                    resp << "Connection: close\r\n\r\n";
+                    send_all(client_socket->get(), resp.str());
+                    return;
+                }
+
+                // === API Routes ===
 
                 // GET /api/status — model, token counts, session info
                 if (request.method == "GET" && request.path == "/api/status") {
