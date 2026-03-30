@@ -19,7 +19,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake make
+          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-curl make
 
       - name: Configure CMake
         run: cmake -B build -S . -G "MinGW Makefiles"
@@ -40,6 +40,15 @@ jobs:
       - name: Run e2e tests
         run: ./build/e2e_tests.exe
 
+      - name: Run SSE parser tests
+        run: ./build/sse_parser_tests.exe
+
+      - name: Run MCP server tests
+        run: ./build/mcp_server_tests.exe
+
+      - name: Run approval provider tests
+        run: ./build/approval_provider_tests.exe
+
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
@@ -52,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libcurl4-openssl-dev bubblewrap
 
       - name: Configure CMake
         run: cmake -B build -S .
@@ -73,13 +82,22 @@ jobs:
       - name: Run e2e tests
         run: ./build/e2e_tests
 
+      - name: Run SSE parser tests
+        run: ./build/sse_parser_tests
+
+      - name: Run MCP server tests
+        run: ./build/mcp_server_tests
+
+      - name: Run approval provider tests
+        run: ./build/approval_provider_tests
+
   sanitizer-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
       - name: Configure CMake with sanitizers
         run: cmake -B build -S . -DENABLE_SANITIZERS=ON
@@ -108,6 +126,21 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
 
+      - name: Run SSE parser tests
+        run: ./build/sse_parser_tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+
+      - name: Run MCP server tests
+        run: ./build/mcp_server_tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+
+      - name: Run approval provider tests
+        run: ./build/approval_provider_tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+
   build-macos:
     runs-on: macos-latest
     steps:
@@ -131,3 +164,12 @@ jobs:
 
       - name: Run e2e tests
         run: ./build/e2e_tests
+
+      - name: Run SSE parser tests
+        run: ./build/sse_parser_tests
+
+      - name: Run MCP server tests
+        run: ./build/mcp_server_tests
+
+      - name: Run approval provider tests
+        run: ./build/approval_provider_tests

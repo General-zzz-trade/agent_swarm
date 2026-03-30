@@ -5,7 +5,9 @@
 #include <optional>
 #include <string>
 #include <vector>
+#ifndef _WIN32
 #include <termios.h>
+#endif
 
 class TerminalInput {
 public:
@@ -32,7 +34,9 @@ private:
     int input_fd_;
     std::ostream& output_;
     bool is_tty_ = false;
+#ifndef _WIN32
     termios original_termios_;
+#endif
     bool raw_mode_active_ = false;
 
     // Line editing state

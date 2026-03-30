@@ -1,8 +1,10 @@
 #pragma once
 #include <atomic>
 #include <csignal>
+#ifndef _WIN32
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
 
 class SignalHandler {
 public:

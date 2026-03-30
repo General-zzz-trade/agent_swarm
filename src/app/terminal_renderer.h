@@ -2,8 +2,10 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#ifndef _WIN32
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
 
 struct ApprovalRequest;  // forward declare
 
