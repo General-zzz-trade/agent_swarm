@@ -30,7 +30,11 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake make
+          install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-curl make
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
@@ -48,7 +52,7 @@ jobs:
 
       - name: Build (Unix)
         if: runner.os != 'Windows'
-        run: cmake --build build -j4
+        run: cmake --build build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
@@ -58,6 +62,9 @@ jobs:
           ./build/agent_integration_tests.exe
           ./build/capability_tests.exe
           ./build/e2e_tests.exe
+          ./build/sse_parser_tests.exe
+          ./build/mcp_server_tests.exe
+          ./build/approval_provider_tests.exe
 
       - name: Run tests (Unix)
         if: runner.os != 'Windows'
@@ -66,6 +73,9 @@ jobs:
           ./build/agent_integration_tests
           ./build/capability_tests
           ./build/e2e_tests
+          ./build/sse_parser_tests
+          ./build/mcp_server_tests
+          ./build/approval_provider_tests
 
       - name: Package binary
         run: |
@@ -75,6 +85,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: bolt-${{ matrix.name }}${{ matrix.ext }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -90,12 +101,14 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Update package version from tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
           cd npm
           node -e "const p=require('./package.json'); p.version='${VERSION}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
       - name: Publish to npm
-        run: cd npm && npm publish
+        run: cd npm && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

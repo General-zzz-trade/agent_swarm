@@ -16,6 +16,17 @@ std::string get_env(const char* name) {
     return value != nullptr ? value : "";
 }
 
+[[noreturn]] void throw_missing_key(const std::string& provider, const std::string& env_var,
+                                      const std::string& url_hint = "") {
+    std::string msg = env_var + " environment variable is required for provider=" + provider + ".\n"
+        "  Set it with: export " + env_var + "=your-api-key\n"
+        "  Or run: bolt  (setup wizard will guide you)";
+    if (!url_hint.empty()) {
+        msg += "\n  Get a key at: " + url_hint;
+    }
+    throw std::runtime_error(msg);
+}
+
 }  // namespace
 
 std::unique_ptr<IModelClient> create_model_client(
@@ -32,7 +43,7 @@ std::unique_ptr<IModelClient> create_model_client(
         oai_config.model = model_override.empty() ? config.openai_model : model_override;
 
         if (oai_config.api_key.empty()) {
-            throw std::runtime_error("OPENAI_API_KEY environment variable is required for provider=openai");
+            throw_missing_key("openai", "OPENAI_API_KEY", "https://platform.openai.com/api-keys");
         }
 
         return std::make_unique<OpenAiClient>(std::move(oai_config), transport);
@@ -44,7 +55,7 @@ std::unique_ptr<IModelClient> create_model_client(
         claude_config.model = model_override.empty() ? config.claude_model : model_override;
 
         if (claude_config.api_key.empty()) {
-            throw std::runtime_error("ANTHROPIC_API_KEY environment variable is required for provider=claude");
+            throw_missing_key("claude", "ANTHROPIC_API_KEY", "https://console.anthropic.com/");
         }
 
         return std::make_unique<ClaudeClient>(std::move(claude_config), transport);
@@ -56,7 +67,7 @@ std::unique_ptr<IModelClient> create_model_client(
         gemini_config.model = model_override.empty() ? config.gemini_model : model_override;
 
         if (gemini_config.api_key.empty()) {
-            throw std::runtime_error("GEMINI_API_KEY environment variable is required for provider=gemini");
+            throw_missing_key("gemini", "GEMINI_API_KEY", "https://aistudio.google.com/apikey");
         }
 
         return std::make_unique<GeminiClient>(std::move(gemini_config), transport);
@@ -70,7 +81,7 @@ std::unique_ptr<IModelClient> create_model_client(
         groq_config.timeout_ms = 30000;  // Groq is fast, shorter timeout
 
         if (groq_config.api_key.empty()) {
-            throw std::runtime_error("GROQ_API_KEY environment variable is required for provider=groq");
+            throw_missing_key("groq", "GROQ_API_KEY", "https://console.groq.com/keys");
         }
 
         return std::make_unique<OpenAiClient>(std::move(groq_config), transport);
@@ -83,7 +94,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.deepseek_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("DEEPSEEK_API_KEY environment variable is required for provider=deepseek");
+            throw_missing_key("deepseek", "DEEPSEEK_API_KEY", "https://platform.deepseek.com/api_keys");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
@@ -96,7 +107,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.qwen_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("DASHSCOPE_API_KEY environment variable is required for provider=qwen");
+            throw_missing_key("qwen", "DASHSCOPE_API_KEY", "https://dashscope.console.aliyun.com/apiKey");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
@@ -109,7 +120,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.zhipu_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("ZHIPU_API_KEY environment variable is required for provider=zhipu");
+            throw_missing_key("zhipu", "ZHIPU_API_KEY", "https://open.bigmodel.cn/usercenter/apikeys");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
@@ -122,7 +133,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.moonshot_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("MOONSHOT_API_KEY environment variable is required for provider=moonshot");
+            throw_missing_key("moonshot", "MOONSHOT_API_KEY", "https://platform.moonshot.cn/console/api-keys");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
@@ -135,7 +146,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.baichuan_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("BAICHUAN_API_KEY environment variable is required for provider=baichuan");
+            throw_missing_key("baichuan", "BAICHUAN_API_KEY", "https://platform.baichuan-ai.com/console/apikey");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
@@ -148,7 +159,7 @@ std::unique_ptr<IModelClient> create_model_client(
         cfg.model = model_override.empty() ? config.doubao_model : model_override;
 
         if (cfg.api_key.empty()) {
-            throw std::runtime_error("VOLC_API_KEY environment variable is required for provider=doubao");
+            throw_missing_key("doubao", "VOLC_API_KEY", "https://console.volcengine.com/ark");
         }
 
         return std::make_unique<OpenAiClient>(std::move(cfg), transport);
