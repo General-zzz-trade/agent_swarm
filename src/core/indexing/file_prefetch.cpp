@@ -6,16 +6,34 @@
 FilePrefetchCache::FilePrefetchCache(ThreadPool& pool, std::size_t max_cache_bytes)
     : pool_(pool), max_cache_bytes_(max_cache_bytes) {}
 
+FilePrefetchCache::~FilePrefetchCache() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    shutting_down_ = true;
+    idle_cv_.wait(lock, [this] { return loading_count_ == 0; });
+}
+
 void FilePrefetchCache::warm(const std::filesystem::path& path) {
     const std::string key = path.string();
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (shutting_down_) return;
         auto it = cache_.find(key);
         if (it != cache_.end()) return;  // Already cached or loading
         cache_[key] = {"", 0, true};  // Mark as loading
+        ++loading_count_;
     }
 
-    pool_.submit([this, key]() { do_prefetch(key); });
+    try {
+        pool_.submit([this, key]() { do_prefetch(key); });
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        cache_.erase(key);
+        if (loading_count_ > 0) --loading_count_;
+        if (shutting_down_ && loading_count_ == 0) {
+            idle_cv_.notify_all();
+        }
+        throw;
+    }
 }
 
 std::string FilePrefetchCache::get(const std::filesystem::path& path) const {
@@ -101,10 +119,18 @@ std::vector<std::string> FilePrefetchCache::extract_file_paths(const std::string
 }
 
 void FilePrefetchCache::do_prefetch(const std::string& path) {
+    const auto finish_locked = [this]() {
+        if (loading_count_ > 0) --loading_count_;
+        if (shutting_down_ && loading_count_ == 0) {
+            idle_cv_.notify_all();
+        }
+    };
+
     std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
         std::lock_guard<std::mutex> lock(mutex_);
         cache_.erase(path);
+        finish_locked();
         return;
     }
 
@@ -114,6 +140,7 @@ void FilePrefetchCache::do_prefetch(const std::string& path) {
     if (file_size > 4 * 1024 * 1024) {
         std::lock_guard<std::mutex> lock(mutex_);
         cache_.erase(path);
+        finish_locked();
         return;
     }
 
@@ -121,6 +148,7 @@ void FilePrefetchCache::do_prefetch(const std::string& path) {
     if (current_bytes_.load(std::memory_order_relaxed) + file_size > max_cache_bytes_) {
         std::lock_guard<std::mutex> lock(mutex_);
         cache_.erase(path);
+        finish_locked();
         return;
     }
 
@@ -136,4 +164,5 @@ void FilePrefetchCache::do_prefetch(const std::string& path) {
         it->second.loading = false;
         current_bytes_.fetch_add(file_size, std::memory_order_relaxed);
     }
+    finish_locked();
 }

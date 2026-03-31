@@ -45,9 +45,9 @@ std::vector<SwarmCoordinator::SubTaskResult> SwarmCoordinator::execute_parallel(
         std::vector<std::future<SubTaskResult>> futures;
 
         for (std::size_t i = start; i < end; ++i) {
-            const auto& task = tasks[i];
+            const SubTask task = tasks[i];
             futures.push_back(pool_.submit(
-                [this, &task]() { return run_single_task(task); }));
+                [this, task]() { return run_single_task(task); }));
         }
 
         for (auto& future : futures) {

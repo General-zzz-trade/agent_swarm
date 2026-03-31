@@ -80,7 +80,7 @@ std::string build_usage_text(const std::string& program_name) {
     output << "\033[1mUsage:\033[0m\n";
     output << "  " << program_name << "                              Interactive agent (default)\n";
     output << "  " << program_name << " agent [options] [prompt]     Ask a question or give a task\n";
-    output << "  " << program_name << " api-server [--port 9090]     REST API + Web UI server\n";
+    output << "  " << program_name << " api-server [--host 127.0.0.1] [--port 9090]  REST API + Web UI server\n";
     output << "  " << program_name << " web-chat [--port 8080]       Legacy chat UI\n";
     output << "  " << program_name << " mcp-server                   MCP protocol (Claude Code/Cursor)\n";
     output << "  " << program_name << " telegram                     Telegram bot\n";
@@ -110,11 +110,11 @@ std::string build_usage_text(const std::string& program_name) {
     output << "\n\033[1mExamples:\033[0m\n";
     output << "  " << program_name << " agent \"Read src/main.cpp and explain it\"\n";
     output << "  " << program_name << " agent -p \"Fix the bug\" < error.log\n";
-    output << "  " << program_name << " api-server --port 19090\n";
+    output << "  " << program_name << " api-server --host 127.0.0.1 --port 19090\n";
     output << "  " << program_name << " init\n";
     output << "  MOONSHOT_API_KEY=sk-xxx " << program_name << "\n";
 
-    output << "\n\033[1mConfig:\033[0m bolt.conf | ~/.bolt/config.json | BOLT_PROVIDER, OPENAI_API_KEY, etc.\n";
+    output << "\n\033[1mConfig:\033[0m bolt.conf | ~/.bolt/config.json | BOLT_PROVIDER, OPENAI_API_KEY, BOLT_API_HOST, BOLT_API_TOKEN, etc.\n";
     output << "\033[2mDocs: https://github.com/General-zzz-trade/Bolt\033[0m\n";
     return output.str();
 }

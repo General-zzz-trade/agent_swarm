@@ -23,6 +23,11 @@ const Tool* ToolRegistry::find(const std::string& name) const {
     return it == index_.end() ? nullptr : it->second;
 }
 
+Tool* ToolRegistry::find_mutable(const std::string& name) {
+    const auto it = index_.find(name);
+    return it == index_.end() ? nullptr : it->second;
+}
+
 std::vector<const Tool*> ToolRegistry::list() const {
     std::vector<const Tool*> result;
     result.reserve(tools_.size());

@@ -12,6 +12,7 @@
  */
 
 #include <chrono>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -21,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../src/agent/agent.h"
@@ -130,14 +132,44 @@ TestResult run_test(const std::string& name, TestContext& ctx,
     result.name = name;
 
     auto start = Clock::now();
-    try {
-        result.passed = test_fn(*ctx.agent, ctx.workspace);
-        if (!result.passed) {
-            result.detail = "Test assertion failed";
+    const auto lowercase = [](std::string value) {
+        for (char& ch : value) {
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
         }
-    } catch (const std::exception& e) {
-        result.passed = false;
-        result.detail = e.what();
+        return value;
+    };
+    const auto is_transient_api_error = [&](const std::string& detail) {
+        const std::string lower = lowercase(detail);
+        return lower.find("http 429") != std::string::npos ||
+               lower.find("rate limit") != std::string::npos ||
+               lower.find("overloaded") != std::string::npos ||
+               lower.find("temporarily unavailable") != std::string::npos;
+    };
+
+    int max_retries = 2;
+    if (const char* retries_env = std::getenv("BOLT_API_E2E_RETRIES")) {
+        max_retries = std::max(0, std::atoi(retries_env));
+    }
+
+    int attempts = 0;
+    while (true) {
+        try {
+            result.passed = test_fn(*ctx.agent, ctx.workspace);
+            result.detail = result.passed ? "" : "Test assertion failed";
+        } catch (const std::exception& e) {
+            result.passed = false;
+            result.detail = e.what();
+        }
+
+        if (result.passed || !is_transient_api_error(result.detail) || attempts >= max_retries) {
+            break;
+        }
+
+        ++attempts;
+        std::cerr << "\n         transient API error, retrying (" << attempts
+                  << "/" << max_retries << ")\n";
+        ctx.agent->clear_history();
+        std::this_thread::sleep_for(std::chrono::seconds(attempts * 2));
     }
     result.elapsed_ms = Ms(Clock::now() - start).count();
 
@@ -306,9 +338,9 @@ int main() {
 
     auto ctx = create_test_context();
     if (!ctx) {
-        std::cerr << "\nCannot run API tests without a model client.\n";
+        std::cerr << "\nSkipping API tests because no model client is configured.\n";
         std::cerr << "Set one of: MOONSHOT_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, etc.\n";
-        return 1;
+        return 77;
     }
 
     std::cout << "  Model:     " << ctx->agent->model() << "\n";

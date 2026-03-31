@@ -2,6 +2,7 @@
 #define CORE_INDEXING_FILE_PREFETCH_H
 
 #include <atomic>
+#include <condition_variable>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -17,6 +18,7 @@
 class FilePrefetchCache {
 public:
     explicit FilePrefetchCache(ThreadPool& pool, std::size_t max_cache_bytes = 64 * 1024 * 1024);
+    ~FilePrefetchCache();
 
     /// Prefetch a file into cache (non-blocking, submitted to thread pool).
     void warm(const std::filesystem::path& path);
@@ -49,8 +51,11 @@ private:
     ThreadPool& pool_;
     std::size_t max_cache_bytes_;
     mutable std::mutex mutex_;
+    std::condition_variable idle_cv_;
     std::unordered_map<std::string, CacheEntry> cache_;
     std::atomic<std::size_t> current_bytes_{0};
+    std::size_t loading_count_ = 0;
+    bool shutting_down_ = false;
 
     // Pattern detection for speculative prefetch
     std::vector<std::string> extract_file_paths(const std::string& text) const;

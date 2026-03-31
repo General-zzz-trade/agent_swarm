@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -46,6 +47,7 @@ public:
           bool debug = false,
           std::shared_ptr<IAuditLogger> audit_logger = nullptr,
           ToolRegistry tools = {});
+    ~Agent();
 
     using StreamCallback = std::function<void(const std::string& token)>;
 
@@ -106,6 +108,7 @@ private:
 
     int auto_verify_count_ = 0;
     FailureTracker failure_tracker_;
+    std::future<void> file_index_task_;
     ThreadPool thread_pool_;
     FileIndex file_index_;
     FilePrefetchCache prefetch_cache_;

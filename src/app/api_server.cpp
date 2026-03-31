@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -39,8 +40,10 @@ using BOOL = int;
 #endif
 
 #include "../agent/agent.h"
+#include "http_server_utils.h"
 
 using json = nlohmann::json;
+using namespace http_server_utils;
 
 namespace {
 
@@ -49,6 +52,17 @@ struct ApiRequest {
     std::string path;
     std::unordered_map<std::string, std::string> headers;
     std::string body;
+};
+
+class HttpError : public std::runtime_error {
+public:
+    HttpError(int status_code, std::string message)
+        : std::runtime_error(std::move(message)), status_code_(status_code) {}
+
+    int status_code() const { return status_code_; }
+
+private:
+    int status_code_;
 };
 
 #ifdef _WIN32
@@ -137,7 +151,7 @@ void send_response(SOCKET socket, int status_code, const std::string& status_tex
     response << "HTTP/1.1 " << status_code << " " << status_text << "\r\n";
     response << "Content-Type: " << content_type << "\r\n";
     response << "Content-Length: " << body.size() << "\r\n";
-    response << "Access-Control-Allow-Origin: *\r\n";
+    response << "X-Content-Type-Options: nosniff\r\n";
     response << "Cache-Control: no-store\r\n";
     response << "Connection: close\r\n\r\n";
     response << body;
@@ -148,8 +162,10 @@ void send_json(SOCKET socket, int status_code, const std::string& body) {
     const std::string status_text =
         status_code == 200 ? "OK"
         : status_code == 400 ? "Bad Request"
+        : status_code == 401 ? "Unauthorized"
         : status_code == 404 ? "Not Found"
         : status_code == 409 ? "Conflict"
+        : status_code == 413 ? "Payload Too Large"
         : status_code == 429 ? "Too Many Requests"
         : "Internal Server Error";
     send_response(socket, status_code, status_text, "application/json; charset=utf-8", body);
@@ -160,9 +176,15 @@ std::size_t content_length_from_headers(
     const auto it = headers.find("content-length");
     if (it == headers.end()) return 0;
     try {
-        return static_cast<std::size_t>(std::stoull(it->second));
+        const std::size_t content_length = static_cast<std::size_t>(std::stoull(it->second));
+        if (content_length > kMaxHttpBodyBytes) {
+            throw HttpError(413, "HTTP request body is too large");
+        }
+        return content_length;
+    } catch (const HttpError&) {
+        throw;
     } catch (const std::exception&) {
-        throw std::runtime_error("Invalid Content-Length");
+        throw HttpError(400, "Invalid Content-Length");
     }
 }
 
@@ -172,11 +194,11 @@ ApiRequest read_request(SOCKET socket) {
     while (raw.find("\r\n\r\n") == std::string::npos) {
         const int bytes = recv(socket, buffer.data(), static_cast<int>(buffer.size()), 0);
         if (bytes <= 0) {
-            throw std::runtime_error("Failed to read HTTP headers");
+            throw HttpError(400, "Failed to read HTTP headers");
         }
         raw.append(buffer.data(), static_cast<std::size_t>(bytes));
-        if (raw.size() > 1024 * 1024) {
-            throw std::runtime_error("HTTP request is too large");
+        if (raw.size() > kMaxHttpHeaderBytes) {
+            throw HttpError(413, "HTTP request headers are too large");
         }
     }
 
@@ -187,7 +209,7 @@ ApiRequest read_request(SOCKET socket) {
     std::istringstream input(header_block);
     std::string request_line;
     if (!std::getline(input, request_line)) {
-        throw std::runtime_error("Missing request line");
+        throw HttpError(400, "Missing request line");
     }
     if (!request_line.empty() && request_line.back() == '\r') {
         request_line.pop_back();
@@ -196,9 +218,15 @@ ApiRequest read_request(SOCKET socket) {
     std::istringstream request_line_stream(request_line);
     ApiRequest request;
     std::string version;
-    request_line_stream >> request.method >> request.path >> version;
-    if (request.method.empty() || request.path.empty()) {
-        throw std::runtime_error("Invalid request line");
+    std::string request_target;
+    request_line_stream >> request.method >> request_target >> version;
+    if (request.method.empty() || request_target.empty()) {
+        throw HttpError(400, "Invalid request line");
+    }
+    try {
+        request.path = normalize_request_path(request_target);
+    } catch (const std::exception& e) {
+        throw HttpError(400, e.what());
     }
 
     std::string line;
@@ -214,18 +242,26 @@ ApiRequest read_request(SOCKET socket) {
     while (body.size() < content_length) {
         const int bytes = recv(socket, buffer.data(), static_cast<int>(buffer.size()), 0);
         if (bytes <= 0) {
-            throw std::runtime_error("Failed to read HTTP body");
+            throw HttpError(400, "Failed to read HTTP body");
         }
         body.append(buffer.data(), static_cast<std::size_t>(bytes));
+        if (body.size() > content_length || body.size() > kMaxHttpBodyBytes) {
+            throw HttpError(413, "HTTP request body is too large");
+        }
     }
     request.body = body.substr(0, content_length);
     return request;
 }
 
 std::string extract_json_string_field(const std::string& body, const std::string& key) {
-    const json parsed = json::parse(body);
+    json parsed;
+    try {
+        parsed = json::parse(body);
+    } catch (const std::exception&) {
+        throw HttpError(400, "Invalid JSON body");
+    }
     if (!parsed.contains(key) || !parsed[key].is_string()) {
-        throw std::runtime_error("Missing JSON field: " + key);
+        throw HttpError(400, "Missing JSON field: " + key);
     }
     return parsed[key].get<std::string>();
 }
@@ -262,14 +298,43 @@ std::string extract_tool_name(const std::string& path) {
     return path.substr(prefix.size());
 }
 
+bool is_loopback_client(SOCKET socket) {
+    sockaddr_in peer{};
+#ifdef _WIN32
+    int length = sizeof(peer);
+#else
+    socklen_t length = sizeof(peer);
+#endif
+    if (getpeername(socket, reinterpret_cast<sockaddr*>(&peer), &length) != 0) {
+        return false;
+    }
+    const std::uint32_t addr = ntohl(peer.sin_addr.s_addr);
+    return (addr >> 24) == 127;
+}
+
+bool request_is_authorized(const ApiRequest& request,
+                           const std::string& api_token,
+                           SOCKET socket) {
+    if (api_token.empty() || is_loopback_client(socket)) {
+        return true;
+    }
+
+    const auto token = extract_api_token(request.headers);
+    return token.has_value() && constant_time_equals(api_token, *token);
+}
+
 }  // namespace
 
 ApiServer::ApiServer(std::filesystem::path workspace_root,
                      Agent& agent,
-                     unsigned short port)
+                     unsigned short port,
+                     std::string bind_address,
+                     std::string api_token)
     : workspace_root_(std::move(workspace_root)),
       agent_(agent),
       port_(port),
+      bind_address_(std::move(bind_address)),
+      api_token_(std::move(api_token)),
       thread_pool_(4),
       rate_limiter_(10.0) {
     agent_.set_trace_observer([this](const std::vector<ExecutionStep>& trace) {
@@ -289,21 +354,26 @@ int ApiServer::run(std::ostream& output) {
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(port_);
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (inet_pton(AF_INET, bind_address_.c_str(), &address.sin_addr) != 1) {
+        throw std::runtime_error("Invalid API bind address: " + bind_address_);
+    }
 
     const int reuse = 1;
     setsockopt(listener.get(), SOL_SOCKET, SO_REUSEADDR,
                reinterpret_cast<const char*>(&reuse), sizeof(reuse));
 
     if (bind(listener.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) == SOCKET_ERROR) {
-        throw std::runtime_error("Failed to bind API server to 127.0.0.1:" +
+        throw std::runtime_error("Failed to bind API server to " + bind_address_ + ":" +
                                  std::to_string(port_));
     }
     if (listen(listener.get(), SOMAXCONN) == SOCKET_ERROR) {
         throw std::runtime_error("Failed to listen for API connections");
     }
 
-    output << "API server: http://127.0.0.1:" << port_ << "/\n";
+    output << "API server: http://" << bind_address_ << ":" << port_ << "/\n";
+    if (!api_token_.empty()) {
+        output << "API auth: required for non-loopback clients via Authorization: Bearer <token>\n";
+    }
     output << "Press Ctrl+C to stop the server.\n";
 
     while (true) {
@@ -323,6 +393,12 @@ int ApiServer::run(std::ostream& output) {
 
                 // === Static file serving (React UI) ===
                 if (request.method == "GET" && request.path.rfind("/api/", 0) != 0) {
+                    if (has_parent_reference(request.path)) {
+                        send_response(client_socket->get(), 400, "Bad Request",
+                                      "text/plain; charset=utf-8", "Invalid path");
+                        return;
+                    }
+
                     // Serve static files from web-dist/ or bolt-ui web-dist
                     std::string file_path = request.path;
                     if (file_path == "/") file_path = "/index.html";
@@ -338,16 +414,16 @@ int ApiServer::run(std::ostream& output) {
 
                     bool served = false;
                     for (const auto& dir : search_dirs) {
-                        auto full_path = dir / file_path.substr(1);
-                        if (std::filesystem::exists(full_path) && std::filesystem::is_regular_file(full_path)) {
+                        const auto full_path = resolve_static_file(dir, file_path);
+                        if (full_path.has_value()) {
                             // Read file
-                            std::ifstream file(full_path, std::ios::binary);
+                            std::ifstream file(*full_path, std::ios::binary);
                             std::string content((std::istreambuf_iterator<char>(file)),
                                                  std::istreambuf_iterator<char>());
 
                             // Detect content type
                             std::string ct = "application/octet-stream";
-                            std::string ext = full_path.extension().string();
+                            std::string ext = full_path->extension().string();
                             if (ext == ".html") ct = "text/html; charset=utf-8";
                             else if (ext == ".css") ct = "text/css; charset=utf-8";
                             else if (ext == ".js") ct = "application/javascript; charset=utf-8";
@@ -356,12 +432,12 @@ int ApiServer::run(std::ostream& output) {
                             else if (ext == ".png") ct = "image/png";
                             else if (ext == ".ico") ct = "image/x-icon";
 
-                            // Add CORS headers for dev mode
+                            // Same-origin asset response for the bundled UI
                             std::ostringstream resp;
                             resp << "HTTP/1.1 200 OK\r\n";
                             resp << "Content-Type: " << ct << "\r\n";
                             resp << "Content-Length: " << content.size() << "\r\n";
-                            resp << "Access-Control-Allow-Origin: *\r\n";
+                            resp << "X-Content-Type-Options: nosniff\r\n";
                             resp << "Cache-Control: public, max-age=3600\r\n";
                             resp << "Connection: close\r\n\r\n";
                             resp << content;
@@ -374,31 +450,44 @@ int ApiServer::run(std::ostream& output) {
                     if (served) return;
 
                     // SPA fallback: serve index.html for unknown routes
-                    for (const auto& dir : search_dirs) {
-                        auto index = dir / "index.html";
-                        if (std::filesystem::exists(index)) {
-                            std::ifstream file(index, std::ios::binary);
-                            std::string content((std::istreambuf_iterator<char>(file)),
-                                                 std::istreambuf_iterator<char>());
-                            send_response(client_socket->get(), 200, "OK",
-                                         "text/html; charset=utf-8", content);
-                            served = true;
-                            break;
+                    if (looks_like_spa_route(file_path)) {
+                        for (const auto& dir : search_dirs) {
+                            const auto index = resolve_static_file(dir, "/index.html");
+                            if (index.has_value()) {
+                                std::ifstream file(*index, std::ios::binary);
+                                std::string content((std::istreambuf_iterator<char>(file)),
+                                                     std::istreambuf_iterator<char>());
+                                send_response(client_socket->get(), 200, "OK",
+                                             "text/html; charset=utf-8", content);
+                                served = true;
+                                break;
+                            }
                         }
                     }
                     if (served) return;
+
+                    send_response(client_socket->get(), 404, "Not Found",
+                                  "text/plain; charset=utf-8", "Not found");
+                    return;
                 }
 
                 // CORS preflight
                 if (request.method == "OPTIONS") {
                     std::ostringstream resp;
                     resp << "HTTP/1.1 204 No Content\r\n";
-                    resp << "Access-Control-Allow-Origin: *\r\n";
+                    resp << "Allow: GET, POST, OPTIONS\r\n";
                     resp << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
-                    resp << "Access-Control-Allow-Headers: Content-Type\r\n";
+                    resp << "Access-Control-Allow-Headers: Authorization, Content-Type, X-Bolt-API-Token\r\n";
                     resp << "Access-Control-Max-Age: 86400\r\n";
                     resp << "Connection: close\r\n\r\n";
                     send_all(client_socket->get(), resp.str());
+                    return;
+                }
+
+                if (request.path.rfind("/api/", 0) == 0 &&
+                    !request_is_authorized(request, api_token_, client_socket->get())) {
+                    send_json(client_socket->get(), 401,
+                              json{{"ok", false}, {"error", "Unauthorized"}}.dump());
                     return;
                 }
 
@@ -441,7 +530,10 @@ int ApiServer::run(std::ostream& output) {
                     std::string args;
                     try {
                         args = extract_json_string_field(request.body, "args");
-                    } catch (...) {
+                    } catch (const HttpError& error) {
+                        if (std::string(error.what()).rfind("Missing JSON field:", 0) != 0) {
+                            throw;
+                        }
                         args = "";
                     }
 
@@ -496,8 +588,7 @@ int ApiServer::run(std::ostream& output) {
                     sse_header << "HTTP/1.1 200 OK\r\n";
                     sse_header << "Content-Type: text/event-stream; charset=utf-8\r\n";
                     sse_header << "Cache-Control: no-cache\r\n";
-                    sse_header << "Connection: keep-alive\r\n";
-                    sse_header << "Access-Control-Allow-Origin: *\r\n\r\n";
+                    sse_header << "Connection: keep-alive\r\n\r\n";
                     if (!send_all(client_socket->get(), sse_header.str())) {
                         agent_busy_.store(false);
                         return;
@@ -599,6 +690,9 @@ int ApiServer::run(std::ostream& output) {
 
                 send_json(client_socket->get(), 404,
                           json{{"ok", false}, {"error", "Route not found"}}.dump());
+            } catch (const HttpError& error) {
+                send_json(client_socket->get(), error.status_code(),
+                          json{{"ok", false}, {"error", error.what()}}.dump());
             } catch (const std::exception& error) {
                 send_json(client_socket->get(), 500,
                           json{{"ok", false}, {"error", error.what()}}.dump());

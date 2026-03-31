@@ -328,10 +328,23 @@ int run_api_server(int argc, char* argv[]) {
     const std::filesystem::path workspace_root = std::filesystem::current_path();
     const AppConfig config = load_app_config(workspace_root);
 
-    // Parse --port option (default 9090)
+    // Parse --host/--port options
+    std::string host = "127.0.0.1";
+    if (const char* host_env = std::getenv("BOLT_API_HOST")) {
+        if (*host_env != '\0') host = host_env;
+    }
     unsigned short port = 9090;
+    std::string api_token;
+    if (const char* token_env = std::getenv("BOLT_API_TOKEN")) {
+        api_token = token_env;
+    }
     auto args = collect_cli_args(argc, argv, 2);
     for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--host" && i + 1 < args.size()) {
+            host = args[i + 1];
+            ++i;
+            continue;
+        }
         if (args[i] == "--port" && i + 1 < args.size()) {
             try {
                 int p = std::stoi(args[i + 1]);
@@ -339,6 +352,15 @@ int run_api_server(int argc, char* argv[]) {
             } catch (...) {}
             ++i;
         }
+    }
+
+    if (host == "localhost") {
+        host = "127.0.0.1";
+    }
+
+    if (host != "127.0.0.1" && host != "localhost" && api_token.empty()) {
+        std::cerr << "Error: remote API binding requires BOLT_API_TOKEN to be set.\n";
+        return 1;
     }
 
     AgentCliOptions agent_options;
@@ -354,7 +376,7 @@ int run_api_server(int argc, char* argv[]) {
     std::unique_ptr<Agent> agent =
         create_agent(workspace_root, config, agent_options, std::move(services));
 
-    ApiServer server(workspace_root, *agent, port);
+    ApiServer server(workspace_root, *agent, port, host, api_token);
     return server.run(std::cout);
 }
 

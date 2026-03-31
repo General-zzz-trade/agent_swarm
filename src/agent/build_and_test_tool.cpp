@@ -1,8 +1,10 @@
 #include "build_and_test_tool.h"
 
 #include <fstream>
+#include <filesystem>
 #include <regex>
 #include <sstream>
+#include <vector>
 
 #include "workspace_utils.h"
 
@@ -17,6 +19,63 @@ void safe_log_audit(const std::shared_ptr<IAuditLogger>& logger, const AuditEven
 std::string truncate(const std::string& s, std::size_t max) {
     if (s.size() <= max) return s;
     return s.substr(0, max) + "\n... [truncated " + std::to_string(s.size() - max) + " bytes]";
+}
+
+std::string shell_quote(const std::string& value) {
+    if (value.find_first_of(" \t\"") == std::string::npos) {
+        return value;
+    }
+
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    escaped.push_back('"');
+    for (char ch : value) {
+        if (ch == '"') {
+            escaped += "\\\"";
+        } else {
+            escaped.push_back(ch);
+        }
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::string resolve_tool_binary(const std::vector<std::string>& candidates) {
+    namespace fs = std::filesystem;
+
+    for (const auto& candidate : candidates) {
+        if (candidate == "cmake" || candidate == "ctest") {
+            return candidate;
+        }
+        if (fs::exists(candidate)) {
+            return shell_quote(candidate);
+        }
+    }
+    return candidates.empty() ? "" : candidates.back();
+}
+
+std::string choose_cmake_build_dir(const std::filesystem::path& workspace_root) {
+    namespace fs = std::filesystem;
+
+    const std::vector<std::string> preferred_dirs = {
+        "build", "build_perf", "cmake-build-debug", "cmake-build-release"
+    };
+
+    for (const auto& dir : preferred_dirs) {
+        const fs::path build_dir = workspace_root / dir;
+        if (fs::exists(build_dir / "CTestTestfile.cmake") ||
+            fs::exists(build_dir / "CMakeCache.txt")) {
+            return dir;
+        }
+    }
+
+    for (const auto& dir : preferred_dirs) {
+        if (fs::exists(workspace_root / dir)) {
+            return dir;
+        }
+    }
+
+    return "build";
 }
 
 }  // namespace
@@ -42,7 +101,8 @@ std::string BuildAndTestTool::description() const {
 ToolPreview BuildAndTestTool::preview(const std::string& args) const {
     const auto bs = detect_build_system();
     return {"Build (" + bs.name + ") and run tests",
-            "build: " + bs.build_command + "\ntest: " + bs.test_command};
+            "build: " + bs.build_command + "\ntest: " +
+                (bs.test_command.empty() ? "[none detected]" : bs.test_command)};
 }
 
 ToolSchema BuildAndTestTool::schema() const {
@@ -56,29 +116,32 @@ BuildAndTestTool::BuildSystem BuildAndTestTool::detect_build_system() const {
 
     // CMake (check for CMakeLists.txt + build dir)
     if (fs::exists(workspace_root_ / "CMakeLists.txt")) {
-        std::string build_dir = "build";
-        if (fs::exists(workspace_root_ / "build_perf")) {
-            build_dir = "build_perf";
-        }
+        const std::string build_dir = choose_cmake_build_dir(workspace_root_);
+        const bool needs_configure =
+            !fs::exists(workspace_root_ / build_dir / "CMakeCache.txt");
 
-        // Try to find cmake — check common locations
-        std::string cmake = "cmake";
-        const std::vector<std::string> cmake_paths = {
+        const std::string cmake = resolve_tool_binary({
             "C:/Users/11847/AppData/Local/Programs/CLion/bin/cmake/win/x64/bin/cmake.exe",
             "C:/Program Files/CMake/bin/cmake.exe",
             "cmake",
-        };
-        for (const auto& path : cmake_paths) {
-            if (path == "cmake" || fs::exists(path)) {
-                cmake = "\"" + path + "\"";
-                break;
-            }
+        });
+        const std::string ctest = resolve_tool_binary({
+            "C:/Users/11847/AppData/Local/Programs/CLion/bin/cmake/win/x64/bin/ctest.exe",
+            "C:/Program Files/CMake/bin/ctest.exe",
+            "ctest",
+        });
+
+        std::string build_command;
+        if (needs_configure) {
+            build_command = cmake + " -B " + shell_quote(build_dir) + " -S . && " +
+                            cmake + " --build " + shell_quote(build_dir) + " --parallel 8";
+        } else {
+            build_command = cmake + " --build " + shell_quote(build_dir) + " --parallel 8";
         }
 
-        const std::string test_exe = (workspace_root_ / build_dir / "kernel_tests.exe").string();
         return {"cmake",
-                cmake + " --build " + build_dir + " -j8",
-                "\"" + test_exe + "\""};
+                build_command,
+                ctest + " --test-dir " + shell_quote(build_dir) + " --output-on-failure"};
     }
 
     // Cargo (Rust)
@@ -139,7 +202,11 @@ std::string BuildAndTestTool::parse_errors(const std::string& output) const {
 }
 
 ToolResult BuildAndTestTool::run(const std::string& args) const {
-    const std::string mode = trim_copy(args).empty() ? "both" : trim_copy(args);
+    const std::string raw_mode = trim_copy(args);
+    const std::string mode = raw_mode.empty() || raw_mode == "auto" ? "both" : raw_mode;
+    if (mode != "build" && mode != "test" && mode != "both") {
+        return {false, "Invalid mode. Use: build, test, both, or auto"};
+    }
     const auto bs = detect_build_system();
 
     std::ostringstream result;
@@ -177,27 +244,32 @@ ToolResult BuildAndTestTool::run(const std::string& args) const {
     // --- Test phase (only if build succeeded) ---
     if ((mode == "test" || mode == "both") && build_ok) {
         result << "\n=== TEST ===\n";
-        result << "COMMAND: " << bs.test_command << "\n";
+        if (bs.test_command.empty()) {
+            result << "COMMAND: [none]\nSTATUS: SKIP\n";
+            test_ok = true;
+        } else {
+            result << "COMMAND: " << bs.test_command << "\n";
 
-        const auto test_result = command_runner_->run(
-            bs.test_command, workspace_root_, 120000);
+            const auto test_result = command_runner_->run(
+                bs.test_command, workspace_root_, 120000);
 
-        result << "EXIT_CODE: " << test_result.exit_code << "\n";
-        test_ok = test_result.success && test_result.exit_code == 0;
-        result << "STATUS: " << (test_ok ? "PASS" : "FAIL") << "\n";
+            result << "EXIT_CODE: " << test_result.exit_code << "\n";
+            test_ok = test_result.success && test_result.exit_code == 0;
+            result << "STATUS: " << (test_ok ? "PASS" : "FAIL") << "\n";
 
-        const std::string combined = test_result.stdout_output + test_result.stderr_output;
-        if (!test_ok) {
-            const std::string errors = parse_errors(combined);
-            if (!errors.empty()) {
-                result << "\nFAILURES:\n" << errors;
+            const std::string combined = test_result.stdout_output + test_result.stderr_output;
+            if (!test_ok) {
+                const std::string errors = parse_errors(combined);
+                if (!errors.empty()) {
+                    result << "\nFAILURES:\n" << errors;
+                }
             }
-        }
-        result << "\nOUTPUT:\n" << truncate(combined, 16000);
+            result << "\nOUTPUT:\n" << truncate(combined, 16000);
 
-        safe_log_audit(audit_logger_,
-            {"command", "executed", name(), bs.test_command, workspace_root_.string(),
-             120000, test_result.exit_code, true, test_ok, test_result.timed_out, ""});
+            safe_log_audit(audit_logger_,
+                {"command", "executed", name(), bs.test_command, workspace_root_.string(),
+                 120000, test_result.exit_code, true, test_ok, test_result.timed_out, ""});
+        }
     }
 
     // --- Summary ---

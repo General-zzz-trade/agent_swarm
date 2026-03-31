@@ -34,10 +34,17 @@ export function useApi(apiBase: string) {
   }, [apiBase])
 
   useEffect(() => {
-    fetchStatus()
-    fetchTools()
-    const interval = setInterval(fetchStatus, 3000)
-    return () => clearInterval(interval)
+    const initialFetch = window.setTimeout(() => {
+      void fetchStatus()
+      void fetchTools()
+    }, 0)
+    const interval = window.setInterval(() => {
+      void fetchStatus()
+    }, 3000)
+    return () => {
+      window.clearTimeout(initialFetch)
+      window.clearInterval(interval)
+    }
   }, [fetchStatus, fetchTools])
 
   return { status, tools, connected, refresh: fetchStatus }

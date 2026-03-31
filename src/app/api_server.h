@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <string>
 #include <vector>
 
 #include "../agent/execution_step.h"
@@ -18,7 +19,9 @@ class ApiServer {
 public:
     ApiServer(std::filesystem::path workspace_root,
               Agent& agent,
-              unsigned short port);
+              unsigned short port,
+              std::string bind_address = "127.0.0.1",
+              std::string api_token = {});
 
     int run(std::ostream& output);
 
@@ -26,6 +29,8 @@ private:
     std::filesystem::path workspace_root_;
     Agent& agent_;
     unsigned short port_;
+    std::string bind_address_;
+    std::string api_token_;
     std::mutex agent_mutex_;
     std::mutex state_mutex_;
     std::atomic<bool> agent_busy_{false};

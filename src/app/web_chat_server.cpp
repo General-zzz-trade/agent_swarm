@@ -38,10 +38,12 @@ using BOOL = int;
 
 #include "../agent/agent.h"
 #include "agent_status.h"
+#include "http_server_utils.h"
 #include "self_check_runner.h"
 #include "web_approval_provider.h"
 
 using json = nlohmann::json;
+using namespace http_server_utils;
 
 namespace {
 
@@ -50,6 +52,17 @@ struct WebRequest {
     std::string path;
     std::unordered_map<std::string, std::string> headers;
     std::string body;
+};
+
+class HttpError : public std::runtime_error {
+public:
+    HttpError(int status_code, std::string message)
+        : std::runtime_error(std::move(message)), status_code_(status_code) {}
+
+    int status_code() const { return status_code_; }
+
+private:
+    int status_code_;
 };
 
 #ifdef _WIN32
@@ -169,6 +182,7 @@ void send_response(SOCKET socket,
     response << "HTTP/1.1 " << status_code << " " << status_text << "\r\n";
     response << "Content-Type: " << content_type << "\r\n";
     response << "Content-Length: " << body.size() << "\r\n";
+    response << "X-Content-Type-Options: nosniff\r\n";
     response << "Cache-Control: no-store\r\n";
     response << "Connection: close\r\n\r\n";
     response << body;
@@ -181,6 +195,7 @@ void send_json(SOCKET socket, int status_code, const std::string& body) {
         : status_code == 400 ? "Bad Request"
         : status_code == 404 ? "Not Found"
         : status_code == 409 ? "Conflict"
+        : status_code == 413 ? "Payload Too Large"
         : status_code == 429 ? "Too Many Requests"
         : "Internal Server Error";
     send_response(socket, status_code, status_text, "application/json; charset=utf-8", body);
@@ -193,9 +208,15 @@ std::size_t content_length_from_headers(
         return 0;
     }
     try {
-        return static_cast<std::size_t>(std::stoull(it->second));
+        const std::size_t content_length = static_cast<std::size_t>(std::stoull(it->second));
+        if (content_length > kMaxHttpBodyBytes) {
+            throw HttpError(413, "HTTP request body is too large");
+        }
+        return content_length;
+    } catch (const HttpError&) {
+        throw;
     } catch (const std::exception&) {
-        throw std::runtime_error("Invalid Content-Length");
+        throw HttpError(400, "Invalid Content-Length");
     }
 }
 
@@ -205,11 +226,11 @@ WebRequest read_request(SOCKET socket) {
     while (raw.find("\r\n\r\n") == std::string::npos) {
         const int bytes = recv(socket, buffer.data(), static_cast<int>(buffer.size()), 0);
         if (bytes <= 0) {
-            throw std::runtime_error("Failed to read HTTP headers");
+            throw HttpError(400, "Failed to read HTTP headers");
         }
         raw.append(buffer.data(), static_cast<std::size_t>(bytes));
-        if (raw.size() > 1024 * 1024) {
-            throw std::runtime_error("HTTP request is too large");
+        if (raw.size() > kMaxHttpHeaderBytes) {
+            throw HttpError(413, "HTTP request headers are too large");
         }
     }
 
@@ -220,7 +241,7 @@ WebRequest read_request(SOCKET socket) {
     std::istringstream input(header_block);
     std::string request_line;
     if (!std::getline(input, request_line)) {
-        throw std::runtime_error("Missing request line");
+        throw HttpError(400, "Missing request line");
     }
     if (!request_line.empty() && request_line.back() == '\r') {
         request_line.pop_back();
@@ -229,9 +250,15 @@ WebRequest read_request(SOCKET socket) {
     std::istringstream request_line_stream(request_line);
     WebRequest request;
     std::string version;
-    request_line_stream >> request.method >> request.path >> version;
-    if (request.method.empty() || request.path.empty()) {
-        throw std::runtime_error("Invalid request line");
+    std::string request_target;
+    request_line_stream >> request.method >> request_target >> version;
+    if (request.method.empty() || request_target.empty()) {
+        throw HttpError(400, "Invalid request line");
+    }
+    try {
+        request.path = normalize_request_path(request_target);
+    } catch (const std::exception& e) {
+        throw HttpError(400, e.what());
     }
 
     std::string line;
@@ -251,26 +278,39 @@ WebRequest read_request(SOCKET socket) {
     while (body.size() < content_length) {
         const int bytes = recv(socket, buffer.data(), static_cast<int>(buffer.size()), 0);
         if (bytes <= 0) {
-            throw std::runtime_error("Failed to read HTTP body");
+            throw HttpError(400, "Failed to read HTTP body");
         }
         body.append(buffer.data(), static_cast<std::size_t>(bytes));
+        if (body.size() > content_length || body.size() > kMaxHttpBodyBytes) {
+            throw HttpError(413, "HTTP request body is too large");
+        }
     }
     request.body = body.substr(0, content_length);
     return request;
 }
 
 std::string extract_json_string_field(const std::string& body, const std::string& key) {
-    const json parsed = json::parse(body);
+    json parsed;
+    try {
+        parsed = json::parse(body);
+    } catch (const std::exception&) {
+        throw HttpError(400, "Invalid JSON body");
+    }
     if (!parsed.contains(key) || !parsed[key].is_string()) {
-        throw std::runtime_error("Missing JSON field: " + key);
+        throw HttpError(400, "Missing JSON field: " + key);
     }
     return parsed[key].get<std::string>();
 }
 
 bool extract_json_bool_field(const std::string& body, const std::string& key) {
-    const json parsed = json::parse(body);
+    json parsed;
+    try {
+        parsed = json::parse(body);
+    } catch (const std::exception&) {
+        throw HttpError(400, "Invalid JSON body");
+    }
     if (!parsed.contains(key) || !parsed[key].is_boolean()) {
-        throw std::runtime_error("Missing JSON field: " + key);
+        throw HttpError(400, "Missing JSON field: " + key);
     }
     return parsed[key].get<bool>();
 }
@@ -640,8 +680,7 @@ int WebChatServer::run(std::ostream& output) {
                     sse_header << "HTTP/1.1 200 OK\r\n";
                     sse_header << "Content-Type: text/event-stream; charset=utf-8\r\n";
                     sse_header << "Cache-Control: no-cache\r\n";
-                    sse_header << "Connection: keep-alive\r\n";
-                    sse_header << "Access-Control-Allow-Origin: *\r\n\r\n";
+                    sse_header << "Connection: keep-alive\r\n\r\n";
                     if (!send_all(client_socket->get(), sse_header.str())) {
                         agent_busy_.store(false);
                         return;
@@ -742,6 +781,9 @@ int WebChatServer::run(std::ostream& output) {
 
                 send_json(client_socket->get(), 404,
                           json{{"ok", false}, {"error", "Route not found"}}.dump());
+            } catch (const HttpError& error) {
+                send_json(client_socket->get(), error.status_code(),
+                          json{{"ok", false}, {"error", error.what()}}.dump());
             } catch (const std::exception& error) {
                 send_json(client_socket->get(), 500,
                           json{{"ok", false}, {"error", error.what()}}.dump());

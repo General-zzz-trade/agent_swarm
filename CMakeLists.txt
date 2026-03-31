@@ -76,6 +76,7 @@ add_library(bolt_core STATIC
         src/app/static_approval_provider.cpp
         src/app/terminal_approval_provider.cpp
         src/app/terminal_renderer.cpp
+        src/app/terminal_ui_config.cpp
         src/app/signal_handler.cpp
         src/app/token_tracker.cpp
         src/app/web_approval_provider.cpp
@@ -174,5 +175,10 @@ target_link_libraries(approval_provider_tests PRIVATE bolt_core)
 if (UNIX)
     add_executable(api_e2e_tests tests/api_e2e_tests.cpp)
     target_link_libraries(api_e2e_tests PRIVATE bolt_core)
+    add_test(NAME api_e2e_tests COMMAND api_e2e_tests)
+    set_tests_properties(api_e2e_tests PROPERTIES
+        LABELS "api_e2e;external"
+        SKIP_RETURN_CODE 77
+    )
 endif()
 add_test(NAME approval_provider_tests COMMAND approval_provider_tests)

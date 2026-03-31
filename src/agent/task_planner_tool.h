@@ -28,11 +28,11 @@ class TaskPlannerTool : public Tool {
 public:
     using AgentFactory = std::function<std::unique_ptr<Agent>()>;
 
-    TaskPlannerTool() = default;
+    TaskPlannerTool();
     ~TaskPlannerTool() override;
 
     /// Enable parallel execution support via swarm coordinator.
-    void set_swarm_support(ThreadPool* pool, AgentFactory factory);
+    void set_swarm_support(std::shared_ptr<ThreadPool> pool, AgentFactory factory);
 
     std::string name() const override;
     std::string description() const override;
@@ -49,6 +49,7 @@ private:
 
     mutable std::vector<Step> steps_;
     mutable std::string task_description_;
+    mutable std::shared_ptr<ThreadPool> swarm_pool_;
     mutable std::unique_ptr<SwarmCoordinator> swarm_;
 
     ToolResult handle_plan(const std::string& task) const;

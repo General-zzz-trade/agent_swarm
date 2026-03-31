@@ -1,14 +1,44 @@
 #include "sandboxed_command_runner.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <sstream>
+
+namespace {
+
+std::string shell_quote(const std::string& value) {
+    std::string quoted = "'";
+    for (const char ch : value) {
+        if (ch == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted.push_back(ch);
+        }
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
+std::string seatbelt_escape(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char ch : value) {
+        if (ch == '\\' || ch == '"') {
+            escaped.push_back('\\');
+        }
+        escaped.push_back(ch);
+    }
+    return escaped;
+}
+
+}  // namespace
 
 SandboxedCommandRunner::SandboxedCommandRunner(
     std::shared_ptr<ICommandRunner> inner,
     std::filesystem::path workspace_root,
     SandboxConfig config)
     : inner_(std::move(inner))
-    , workspace_root_(std::move(workspace_root))
+    , workspace_root_(std::filesystem::weakly_canonical(std::move(workspace_root)))
     , config_(std::move(config)) {
 }
 
@@ -54,14 +84,14 @@ std::string SandboxedCommandRunner::build_seatbelt_command(
     profile << "(allow file-read*)\n";
 
     // Allow write to workspace and /tmp
-    profile << "(allow file-write* (subpath \"" << ws << "\"))\n";
+    profile << "(allow file-write* (subpath \"" << seatbelt_escape(ws) << "\"))\n";
     profile << "(allow file-write* (subpath \"/tmp\"))\n";
     profile << "(allow file-write* (subpath \"/private/tmp\"))\n";
 
     // Extra writable paths from config
     for (const auto& path : config_.allow_write) {
         const std::string expanded = expand_home(path);
-        profile << "(allow file-write* (subpath \"" << expanded << "\"))\n";
+        profile << "(allow file-write* (subpath \"" << seatbelt_escape(expanded) << "\"))\n";
     }
 
     // Deny sensitive read paths
@@ -71,7 +101,7 @@ std::string SandboxedCommandRunner::build_seatbelt_command(
     }
     for (const auto& path : deny_list) {
         const std::string expanded = expand_home(path);
-        profile << "(deny file-read* (subpath \"" << expanded << "\"))\n";
+        profile << "(deny file-read* (subpath \"" << seatbelt_escape(expanded) << "\"))\n";
     }
 
     // Process and system calls required for most tools to work
@@ -91,27 +121,9 @@ std::string SandboxedCommandRunner::build_seatbelt_command(
 
     // Build the sandbox-exec command
     std::ostringstream cmd;
-    cmd << "sandbox-exec -p '";
-    // Escape single quotes in profile string
-    std::string prof_str = profile.str();
-    for (char c : prof_str) {
-        if (c == '\'') {
-            cmd << "'\\''";
-        } else {
-            cmd << c;
-        }
-    }
-    cmd << "' /bin/sh -c '";
-    // cd to working directory and run command
-    cmd << "cd " << wd << " && ";
-    for (char c : command) {
-        if (c == '\'') {
-            cmd << "'\\''";
-        } else {
-            cmd << c;
-        }
-    }
-    cmd << "'";
+    const std::string script = "cd " + shell_quote(wd) + " && exec " + command;
+    cmd << "sandbox-exec -p " << shell_quote(profile.str())
+        << " /bin/sh -lc " << shell_quote(script);
 
     return cmd.str();
 }
@@ -130,7 +142,7 @@ std::string SandboxedCommandRunner::build_bwrap_linux_command(
 
     // Writable overlay: workspace directory
     const std::string ws = workspace_root_.string();
-    bwrap << " --bind " << ws << " " << ws;
+    bwrap << " --bind " << shell_quote(ws) << " " << shell_quote(ws);
 
     // Writable /tmp
     bwrap << " --tmpfs /tmp";
@@ -139,7 +151,7 @@ std::string SandboxedCommandRunner::build_bwrap_linux_command(
     for (const auto& path : config_.allow_write) {
         const std::string expanded = expand_home(path);
         if (std::filesystem::exists(expanded)) {
-            bwrap << " --bind " << expanded << " " << expanded;
+            bwrap << " --bind " << shell_quote(expanded) << " " << shell_quote(expanded);
         }
     }
 
@@ -152,7 +164,7 @@ std::string SandboxedCommandRunner::build_bwrap_linux_command(
     for (const auto& path : deny_list) {
         const std::string expanded = expand_home(path);
         if (std::filesystem::exists(expanded)) {
-            bwrap << " --tmpfs " << expanded;
+            bwrap << " --tmpfs " << shell_quote(expanded);
         }
     }
 
@@ -171,18 +183,9 @@ std::string SandboxedCommandRunner::build_bwrap_linux_command(
 
     // Working directory
     const std::string wd = working_directory.empty() ? ws : working_directory.string();
-    bwrap << " --chdir " << wd;
+    bwrap << " --chdir " << shell_quote(wd);
 
-    // Shell command with proper single-quote escaping
-    bwrap << " -- /bin/sh -c '";
-    for (char c : command) {
-        if (c == '\'') {
-            bwrap << "'\\''";
-        } else {
-            bwrap << c;
-        }
-    }
-    bwrap << "'";
+    bwrap << " -- /bin/sh -lc " << shell_quote(command);
 
     return bwrap.str();
 }

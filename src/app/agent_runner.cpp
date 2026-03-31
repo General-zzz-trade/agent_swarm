@@ -20,6 +20,7 @@
 #include "setup_wizard.h"
 #include "terminal_renderer.h"
 #include "terminal_input.h"
+#include "terminal_ui_config.h"
 #include "signal_handler.h"
 #include "token_tracker.h"
 
@@ -198,9 +199,10 @@ std::string build_agent_banner(const Agent& agent) {
 int run_agent_single_turn(Agent& agent, const std::string& prompt, std::ostream& output) {
     bool first_token = true;
     bool is_terminal = (&output == &std::cout);
+    const TerminalUiConfig ui_config = load_terminal_ui_config();
 
     Spinner spinner;
-    if (is_terminal) spinner.start(output);
+    if (is_terminal && ui_config.spinner_enabled) spinner.start(output);
 
     TerminalRenderer renderer(output);
     renderer.begin_stream();
@@ -208,14 +210,14 @@ int run_agent_single_turn(Agent& agent, const std::string& prompt, std::ostream&
     std::string reply = agent.run_turn_streaming(prompt,
         [&](const std::string& token) {
             if (first_token) {
-                if (is_terminal) spinner.stop();
+                if (is_terminal && ui_config.spinner_enabled) spinner.stop();
                 first_token = false;
             }
             renderer.stream_token(token);
         });
 
     if (first_token) {
-        if (is_terminal) spinner.stop();
+        if (is_terminal && ui_config.spinner_enabled) spinner.stop();
         renderer.render_markdown(reply);
     }
     renderer.end_stream();
@@ -231,6 +233,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
     TerminalInput term_input(STDIN_FILENO, output);
     SignalHandler::instance().install();
     TokenTracker tracker;
+    const TerminalUiConfig ui_config = load_terminal_ui_config();
 
     // Undo stack
     std::vector<UndoEntry> undo_stack;
@@ -400,6 +403,9 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             output << "\n\033[1;35m Shortcuts\033[0m\n";
             output << "  \033[2mCtrl+C\033[0m cancel  \033[2mCtrl+L\033[0m clear screen  \033[2mCtrl+D\033[0m exit\n";
             output << "  \033[2m↑/↓\033[0m history   \033[2mTab\033[0m complete       \033[2m@file\033[0m include file\n";
+            output << "\n\033[1;35m UI\033[0m\n";
+            output << "  \033[2mDefault output preserves terminal scrollback.\033[0m\n";
+            output << "  \033[2mSet BOLT_TRANSIENT_UI=1 to re-enable animated spinner/status overlays.\033[0m\n";
             output << "\n";
             continue;
         }
@@ -1181,9 +1187,13 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
         agent.set_trace_observer([&](const std::vector<ExecutionStep>& trace) {
             // Stop spinner before writing tool progress (prevent race)
             if (!spinner_stopped_for_tools && first_token) {
-                spinner.stop();
+                if (ui_config.spinner_enabled) {
+                    spinner.stop();
+                }
                 spinner_stopped_for_tools = true;
-                output << "\n";
+                if (ui_config.transient_ui) {
+                    output << "\n";
+                }
             }
             // Show new steps as they appear
             for (std::size_t i = last_trace_size; i < trace.size(); ++i) {
@@ -1261,10 +1271,18 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                     while (!arg_hint.empty() && (arg_hint.back() == '\n' || arg_hint.back() == '\r'))
                         arg_hint.pop_back();
 
-                    output << "\r\033[K"  // Clear line
-                           << "  " << step_prefix << "\033[33m\u280b\033[0m \033[2m" << tool_desc;
+                    output << "  " << step_prefix;
+                    if (ui_config.transient_ui) {
+                        output << "\r\033[K\033[33m\u280b\033[0m \033[2m" << tool_desc;
+                    } else {
+                        output << "\033[2m→ " << tool_desc;
+                    }
                     if (!arg_hint.empty()) output << " \033[36m" << arg_hint << "\033[0m";
-                    output << "\033[0m" << std::flush;
+                    output << "\033[0m";
+                    if (!ui_config.transient_ui) {
+                        output << "\n";
+                    }
+                    output << std::flush;
                 } else if (step.status == ExecutionStepStatus::completed) {
                     // Tool succeeded — fold long output
                     std::string summary = step.detail;
@@ -1294,8 +1312,11 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                         for (auto& c : summary) if (c == '\n') c = ' ';
                     }
 
-                    output << "\r\033[K"  // Clear line
-                           << "  " << step_prefix << "\033[32m\u2713\033[0m \033[2m"
+                    output << "  " << step_prefix;
+                    if (ui_config.transient_ui) {
+                        output << "\r\033[K";
+                    }
+                    output << "\033[32m\u2713\033[0m \033[2m"
                            << step.tool_name << "\033[0m";
                     if (!summary.empty() && summary != "Pending execution") {
                         output << " \033[2m\u2014 " << summary << "\033[0m";
@@ -1304,14 +1325,20 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                 } else if (step.status == ExecutionStepStatus::failed) {
                     std::string err = step.detail.substr(0, 80);
                     for (auto& c : err) if (c == '\n') c = ' ';
-                    output << "\r\033[K"
-                           << "  " << step_prefix << "\033[31m\u2717\033[0m \033[2m"
+                    output << "  " << step_prefix;
+                    if (ui_config.transient_ui) {
+                        output << "\r\033[K";
+                    }
+                    output << "\033[31m\u2717\033[0m \033[2m"
                            << step.tool_name
                            << "\033[0m \033[31m" << err << "\033[0m\n" << std::flush;
                 } else if (step.status == ExecutionStepStatus::denied ||
                            step.status == ExecutionStepStatus::blocked) {
-                    output << "\r\033[K"
-                           << "  " << step_prefix << "\033[33m\u2298\033[0m \033[2m"
+                    output << "  " << step_prefix;
+                    if (ui_config.transient_ui) {
+                        output << "\r\033[K";
+                    }
+                    output << "\033[33m\u2298\033[0m \033[2m"
                            << step.tool_name
                            << "\033[0m \033[33m" << step.detail.substr(0, 60) << "\033[0m\n"
                            << std::flush;
@@ -1322,14 +1349,16 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
 
         // Stream the response
         SignalHandler::instance().reset();
-        spinner.start(output);
+        if (ui_config.spinner_enabled) {
+            spinner.start(output);
+        }
         renderer.begin_stream();
 
         try {
             std::string reply = agent.run_turn_streaming(expanded,
                 [&](const std::string& token) {
                     if (first_token) {
-                        if (!spinner_stopped_for_tools) {
+                        if (ui_config.spinner_enabled && !spinner_stopped_for_tools) {
                             spinner.stop();
                         }
                         first_token = false;
@@ -1339,7 +1368,7 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
                 });
 
             if (first_token) {
-                if (!spinner_stopped_for_tools) {
+                if (ui_config.spinner_enabled && !spinner_stopped_for_tools) {
                     spinner.stop();
                 }
                 output << "\n";
@@ -1360,7 +1389,9 @@ int run_agent_interactive_loop(Agent& agent, std::istream& /*input*/, std::ostre
             prompt_state = PromptState::ready;
 
         } catch (const std::exception& e) {
-            if (first_token && !spinner_stopped_for_tools) spinner.stop();
+            if (ui_config.spinner_enabled && first_token && !spinner_stopped_for_tools) {
+                spinner.stop();
+            }
             renderer.end_stream();
             std::string err_msg = e.what();
             if (SignalHandler::instance().is_cancelled() ||

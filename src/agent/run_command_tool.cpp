@@ -21,16 +21,36 @@ struct CommandValidation {
 std::vector<std::string> tokenize_command(const std::string& command) {
     std::vector<std::string> tokens;
     std::string current;
-    bool in_quotes = false;
+    bool in_single_quotes = false;
+    bool in_double_quotes = false;
+    bool escape_next = false;
 
     for (std::size_t i = 0; i < command.size(); ++i) {
         const char ch = command[i];
-        if (ch == '"') {
-            in_quotes = !in_quotes;
+
+        if (escape_next) {
+            current += ch;
+            escape_next = false;
             continue;
         }
 
-        if (!in_quotes && std::isspace(static_cast<unsigned char>(ch))) {
+        if (!in_single_quotes && ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+
+        if (!in_double_quotes && ch == '\'') {
+            in_single_quotes = !in_single_quotes;
+            continue;
+        }
+
+        if (!in_single_quotes && ch == '"') {
+            in_double_quotes = !in_double_quotes;
+            continue;
+        }
+
+        if (!in_single_quotes && !in_double_quotes &&
+            std::isspace(static_cast<unsigned char>(ch))) {
             if (!current.empty()) {
                 tokens.push_back(current);
                 current.clear();
@@ -41,7 +61,11 @@ std::vector<std::string> tokenize_command(const std::string& command) {
         current += ch;
     }
 
-    if (in_quotes) {
+    if (escape_next) {
+        throw std::runtime_error("Trailing escape in command");
+    }
+
+    if (in_single_quotes || in_double_quotes) {
         throw std::runtime_error("Unterminated quote in command");
     }
 
@@ -95,15 +119,56 @@ CommandValidation validate_command(const std::string& command,
         return {false, "Command is empty"};
     }
 
-    // Block only dangerous metacharacters; allow pipes and redirects for dev workflows
-    for (const char ch : command) {
+    bool in_single_quotes = false;
+    bool in_double_quotes = false;
+    bool escape_next = false;
+    for (std::size_t i = 0; i < command.size(); ++i) {
+        const char ch = command[i];
+
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+
+        if (!in_single_quotes && ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+
+        if (!in_double_quotes && ch == '\'') {
+            in_single_quotes = !in_single_quotes;
+            continue;
+        }
+
+        if (!in_single_quotes && ch == '"') {
+            in_double_quotes = !in_double_quotes;
+            continue;
+        }
+
+        if (in_single_quotes) {
+            continue;
+        }
+
+        if (in_double_quotes) {
+            if (ch == '$' || ch == '`') {
+                return {false, "Command contains blocked shell expansion syntax"};
+            }
+            continue;
+        }
+
         switch (ch) {
-            case '&':   // background execution — blocked
-            case ';':   // command chaining — blocked (use && in shell)
-            case '^':   // Windows escape — blocked
+            case '&':
+            case ';':
+            case '|':
+            case '<':
+            case '>':
+            case '^':
             case '\n':
             case '\r':
                 return {false, "Command contains blocked shell metacharacters"};
+            case '$':
+            case '`':
+                return {false, "Command contains blocked shell expansion syntax"};
             default:
                 break;
         }

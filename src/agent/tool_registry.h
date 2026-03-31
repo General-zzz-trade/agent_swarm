@@ -12,6 +12,7 @@ class ToolRegistry {
 public:
     void register_tool(std::unique_ptr<Tool> tool);
     const Tool* find(const std::string& name) const;
+    Tool* find_mutable(const std::string& name);
     std::vector<const Tool*> list() const;
     bool empty() const;
 

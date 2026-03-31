@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +33,7 @@
 #include "../src/app/program_cli.h"
 #include "../src/app/self_check_runner.h"
 #include "../src/app/static_approval_provider.h"
+#include "../src/app/terminal_ui_config.h"
 #include "../src/app/web_chat_cli_options.h"
 #include "../src/core/interfaces/audit_logger.h"
 #include "../src/platform/platform_agent_factory.h"
@@ -66,6 +68,60 @@ public:
 
 private:
     std::filesystem::path path_;
+};
+
+class ScopedEnvVar {
+public:
+    explicit ScopedEnvVar(const std::string& name)
+        : name_(name) {
+        const char* existing = std::getenv(name.c_str());
+        if (existing) {
+            had_value_ = true;
+            original_value_ = existing;
+        }
+    }
+
+    ~ScopedEnvVar() { restore(); }
+
+    void set(const std::string& value) {
+#ifdef _WIN32
+        _putenv_s(name_.c_str(), value.c_str());
+#else
+        setenv(name_.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    void unset() {
+#ifdef _WIN32
+        _putenv_s(name_.c_str(), "");
+#else
+        unsetenv(name_.c_str());
+#endif
+    }
+
+private:
+    void restore() {
+        if (restored_) return;
+        restored_ = true;
+        if (had_value_) {
+#ifdef _WIN32
+            _putenv_s(name_.c_str(), original_value_.c_str());
+#else
+            setenv(name_.c_str(), original_value_.c_str(), 1);
+#endif
+        } else {
+#ifdef _WIN32
+            _putenv_s(name_.c_str(), "");
+#else
+            unsetenv(name_.c_str());
+#endif
+        }
+    }
+
+    std::string name_;
+    std::string original_value_;
+    bool had_value_ = false;
+    bool restored_ = false;
 };
 
 class LocalTestFileSystem : public IFileSystem {
@@ -916,12 +972,23 @@ void expect_run_command_rejects_metacharacters() {
     auto runner = std::make_shared<RecordingCommandRunner>();
 
     RunCommandTool tool(temp_dir.path(), runner);
-    // Pipes and redirects are now allowed for dev workflows.
-    // But background execution (&) and chaining (;) are still blocked.
-    const ToolResult result = tool.run("git status & echo pwned");
-    expect_equal(result.success, false, "Dangerous metacharacters should be blocked");
+    const ToolResult result = tool.run("git status | python -c 'print(1)'");
+    expect_equal(result.success, false, "Dangerous shell metacharacters should be blocked");
     expect_true(result.content.find("blocked shell metacharacters") != std::string::npos,
                 "Blocked metacharacter failure should be explicit");
+    expect_equal(runner->last_command, "", "Shell metacharacter commands should not execute");
+}
+
+void expect_run_command_rejects_shell_expansions() {
+    ScopedTempDir temp_dir;
+    auto runner = std::make_shared<RecordingCommandRunner>();
+
+    RunCommandTool tool(temp_dir.path(), runner);
+    const ToolResult result = tool.run("git status $(python -c 'print(1)')");
+    expect_equal(result.success, false, "Shell expansion syntax should be blocked");
+    expect_true(result.content.find("blocked shell expansion syntax") != std::string::npos,
+                "Blocked shell expansion failure should be explicit");
+    expect_equal(runner->last_command, "", "Shell expansion commands should not execute");
 }
 
 void expect_agent_reads_file_then_replies() {
@@ -1590,6 +1657,51 @@ void expect_agent_runner_interactive_loop_handles_commands() {
                 "Clearing history should remove prior conversation before the next turn");
 }
 
+void expect_terminal_ui_config_defaults_to_scrollback_safe() {
+    ScopedEnvVar transient("BOLT_TRANSIENT_UI");
+    ScopedEnvVar spinner("BOLT_SPINNER");
+    ScopedEnvVar overlay("BOLT_OVERLAY_STATUS_BAR");
+    transient.unset();
+    spinner.unset();
+    overlay.unset();
+
+    const TerminalUiConfig config = load_terminal_ui_config();
+    expect_true(!config.transient_ui, "Terminal UI should default to scrollback-safe mode");
+    expect_true(!config.spinner_enabled, "Spinner should default off in scrollback-safe mode");
+    expect_true(!config.overlay_status_bar,
+                "Overlay status bar should default off in scrollback-safe mode");
+}
+
+void expect_terminal_ui_config_allows_transient_override() {
+    ScopedEnvVar transient("BOLT_TRANSIENT_UI");
+    ScopedEnvVar spinner("BOLT_SPINNER");
+    ScopedEnvVar overlay("BOLT_OVERLAY_STATUS_BAR");
+    transient.set("1");
+    spinner.unset();
+    overlay.unset();
+
+    const TerminalUiConfig config = load_terminal_ui_config();
+    expect_true(config.transient_ui, "Transient UI env should enable transient updates");
+    expect_true(config.spinner_enabled, "Transient UI should enable spinner by default");
+    expect_true(config.overlay_status_bar,
+                "Transient UI should enable overlay status bar by default");
+}
+
+void expect_terminal_ui_config_honors_explicit_spinner_override() {
+    ScopedEnvVar transient("BOLT_TRANSIENT_UI");
+    ScopedEnvVar spinner("BOLT_SPINNER");
+    ScopedEnvVar overlay("BOLT_OVERLAY_STATUS_BAR");
+    transient.unset();
+    spinner.set("1");
+    overlay.unset();
+
+    const TerminalUiConfig config = load_terminal_ui_config();
+    expect_true(!config.transient_ui, "Spinner override should not force transient UI");
+    expect_true(config.spinner_enabled, "Spinner env should explicitly enable spinner");
+    expect_true(!config.overlay_status_bar,
+                "Overlay status bar should remain off without explicit override");
+}
+
 void expect_agent_factory_uses_supplied_services() {
     ScopedTempDir temp_dir;
     AppConfig config;
@@ -1865,6 +1977,7 @@ int main() {
         {"run_command rejects non-whitelisted executable",
          expect_run_command_rejects_non_whitelisted_executable},
         {"run_command rejects metacharacters", expect_run_command_rejects_metacharacters},
+        {"run_command rejects shell expansions", expect_run_command_rejects_shell_expansions},
         {"agent reads file then replies", expect_agent_reads_file_then_replies},
         {"agent records multi-step desktop trace", expect_agent_records_multi_step_desktop_trace},
         {"agent trace observer receives progress updates",
@@ -1909,6 +2022,12 @@ int main() {
          expect_agent_runner_single_turn_writes_response},
         {"agent runner interactive loop handles commands",
          expect_agent_runner_interactive_loop_handles_commands},
+        {"terminal UI config defaults to scrollback-safe",
+         expect_terminal_ui_config_defaults_to_scrollback_safe},
+        {"terminal UI config allows transient override",
+         expect_terminal_ui_config_allows_transient_override},
+        {"terminal UI config honors explicit spinner override",
+         expect_terminal_ui_config_honors_explicit_spinner_override},
         {"tool registry rejects duplicate registration",
          expect_tool_registry_rejects_duplicate_registration},
         {"default tool set factory registers known tools",

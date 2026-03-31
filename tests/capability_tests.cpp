@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -17,9 +18,11 @@
 #include "../src/agent/tool.h"
 #include "../src/agent/tool_registry.h"
 #include "../src/agent/calculator_tool.h"
+#include "../src/agent/build_and_test_tool.h"
 #include "../src/agent/list_dir_tool.h"
 #include "../src/agent/read_file_tool.h"
 #include "../src/agent/search_code_tool.h"
+#include "../src/agent/task_planner_tool.h"
 #include "../src/agent/write_file_tool.h"
 #include "../src/agent/edit_file_tool.h"
 #include "../src/agent/run_command_tool.h"
@@ -28,6 +31,7 @@
 #include "../src/agent/plugin_loader.h"
 #include "../src/agent/skill_loader.h"
 #include "../src/app/app_config.h"
+#include "../src/app/http_server_utils.h"
 #include "../src/app/static_approval_provider.h"
 #include "../src/app/program_cli.h"
 #include "../src/core/interfaces/model_client.h"
@@ -35,6 +39,7 @@
 #include "../src/core/interfaces/audit_logger.h"
 #include "../src/core/model/chat_message.h"
 #include "../src/core/model/tool_schema.h"
+#include "../src/core/routing/model_router.h"
 #include "../src/core/threading/thread_pool.h"
 #include "../src/core/indexing/file_index.h"
 #include "../src/core/indexing/file_prefetch.h"
@@ -62,6 +67,14 @@ void expect_equal(const std::string& expected, const std::string& actual,
     if (expected != actual) {
         throw std::runtime_error(context + ": expected=\"" + expected +
                                  "\" actual=\"" + actual + "\"");
+    }
+}
+
+void expect_contains(const std::string& haystack, const std::string& needle,
+                     const std::string& context) {
+    ++g_assertions;
+    if (haystack.find(needle) == std::string::npos) {
+        throw std::runtime_error(context + ": missing=\"" + needle + "\"");
     }
 }
 
@@ -141,6 +154,25 @@ public:
     }
 };
 
+class RecordingSequenceCommandRunner : public ICommandRunner {
+public:
+    mutable std::vector<std::string> commands;
+    mutable std::vector<std::filesystem::path> working_directories;
+    std::vector<CommandExecutionResult> scripted_results;
+    CommandExecutionResult fallback{true, false, 0, "ok", ""};
+
+    CommandExecutionResult run(const std::string& command,
+                               const std::filesystem::path& working_directory,
+                               std::size_t) const override {
+        commands.push_back(command);
+        working_directories.push_back(working_directory);
+        if (commands.size() <= scripted_results.size()) {
+            return scripted_results[commands.size() - 1];
+        }
+        return fallback;
+    }
+};
+
 class NullAuditLogger : public IAuditLogger {
 public:
     void log(const AuditEvent&) override {}
@@ -200,6 +232,91 @@ public:
     }
     bool supports_tools() const override { return true; }
     bool supports_streaming() const override { return true; }
+};
+
+class ScriptedStructuredClient : public IModelClient {
+public:
+    explicit ScriptedStructuredClient(std::vector<ChatMessage> responses,
+                                      std::string model_name)
+        : responses_(std::move(responses)),
+          model_name_(std::move(model_name)) {}
+
+    std::string generate(const std::string&) const override {
+        return "{}";
+    }
+
+    const std::string& model() const override {
+        return model_name_;
+    }
+
+    ChatMessage chat(const std::vector<ChatMessage>& messages,
+                     const std::vector<ToolSchema>&) const override {
+        ++call_count;
+        received_messages.push_back(messages);
+        if (next_ >= responses_.size()) {
+            ChatMessage msg;
+            msg.role = ChatRole::assistant;
+            msg.content = "No more scripted responses.";
+            return msg;
+        }
+        return responses_[next_++];
+    }
+
+    bool supports_tools() const override { return true; }
+
+    mutable int call_count = 0;
+    mutable std::vector<std::vector<ChatMessage>> received_messages;
+
+private:
+    std::vector<ChatMessage> responses_;
+    std::string model_name_;
+    mutable std::size_t next_ = 0;
+};
+
+ChatMessage make_tool_call_message(const std::string& tool_name,
+                                   const std::string& arguments) {
+    ChatMessage msg;
+    msg.role = ChatRole::assistant;
+    msg.tool_calls.push_back({"call_1", tool_name, arguments});
+    return msg;
+}
+
+ChatMessage make_reply_message(const std::string& content) {
+    ChatMessage msg;
+    msg.role = ChatRole::assistant;
+    msg.content = content;
+    return msg;
+}
+
+class DuplicateToolCallClient : public IModelClient {
+public:
+    std::string generate(const std::string&) const override { return "{}"; }
+
+    const std::string& model() const override {
+        static const std::string name = "duplicate-tool-call-client";
+        return name;
+    }
+
+    ChatMessage chat(const std::vector<ChatMessage>& messages,
+                     const std::vector<ToolSchema>&) const override {
+        received_messages.push_back(messages);
+
+        ChatMessage reply;
+        reply.role = ChatRole::assistant;
+        if (call_count++ == 0) {
+            reply.tool_calls.push_back({"call_1", "calculator", R"({"expression":"2 + 2"})"});
+            reply.tool_calls.push_back({"call_2", "calculator", R"({"expression":"3 + 3"})"});
+            return reply;
+        }
+
+        reply.content = "done";
+        return reply;
+    }
+
+    bool supports_tools() const override { return true; }
+
+    mutable int call_count = 0;
+    mutable std::vector<std::vector<ChatMessage>> received_messages;
 };
 
 // ============================================================
@@ -299,6 +416,115 @@ void test_run_command_tool() {
     // Rejected command
     auto r2 = tool.run("rm -rf /");
     expect_true(!r2.success, "run_command rejects unknown");
+}
+
+void test_build_and_test_cmake_uses_ctest_and_configures_missing_build_dir() {
+    ScopedTempDir tmp;
+    std::ofstream(tmp.path() / "CMakeLists.txt") << "cmake_minimum_required(VERSION 3.10)\nproject(test)\n";
+
+    auto runner = std::make_shared<RecordingSequenceCommandRunner>();
+    runner->scripted_results = {
+        {true, false, 0, "build ok", ""},
+        {true, false, 0, "ctest ok", ""},
+    };
+
+    BuildAndTestTool tool(tmp.path(), runner);
+    auto result = tool.run("auto");
+
+    expect_true(result.success, "build_and_test succeeds for scripted cmake run");
+    expect_true(runner->commands.size() == 2, "build_and_test executes build and test commands");
+    expect_contains(runner->commands[0], "cmake -B build -S .", "missing build dir triggers configure");
+    expect_contains(runner->commands[0], "cmake --build build --parallel 8", "cmake build command is portable");
+    expect_contains(runner->commands[1], "ctest --test-dir build --output-on-failure",
+                    "cmake tests run via ctest");
+}
+
+void test_task_planner_generates_default_steps() {
+    TaskPlannerTool tool;
+    auto result = tool.run("plan:Fix the failing unit test");
+
+    expect_true(result.success, "task_planner plan succeeds");
+    expect_contains(result.content, "PLAN:", "generated plan is rendered");
+    expect_contains(result.content, "build_and_test", "generated plan includes verification");
+}
+
+void test_task_planner_parallel_workers() {
+    auto pool = std::make_shared<ThreadPool>(2);
+    TaskPlannerTool tool;
+    tool.set_swarm_support(pool, []() -> std::unique_ptr<Agent> {
+        class WorkerReplyClient : public IModelClient {
+        public:
+            std::string generate(const std::string&) const override { return "{}"; }
+            const std::string& model() const override {
+                static const std::string name = "worker-reply";
+                return name;
+            }
+            ChatMessage chat(const std::vector<ChatMessage>& messages,
+                             const std::vector<ToolSchema>&) const override {
+                ChatMessage msg;
+                msg.role = ChatRole::assistant;
+                msg.content = messages.empty() ? "no task" : "handled: " + messages.back().content;
+                return msg;
+            }
+            bool supports_tools() const override { return true; }
+        };
+
+        ToolRegistry tools;
+        tools.register_tool(std::make_unique<CalculatorTool>());
+        AgentRuntimeConfig runtime;
+        runtime.max_model_steps = 2;
+        return std::make_unique<Agent>(std::make_unique<WorkerReplyClient>(),
+                                       std::make_shared<StaticApprovalProvider>(false),
+                                       std::filesystem::current_path(),
+                                       PolicyConfig{},
+                                       runtime,
+                                       false,
+                                       nullptr,
+                                       std::move(tools));
+    });
+
+    auto result = tool.run("parallel:Inspect module A\nInspect module B");
+
+    expect_true(result.success, "parallel task planner run succeeds");
+    expect_contains(result.content, "SUMMARY: 2/2 tasks succeeded", "parallel workers complete");
+}
+
+void test_agent_preserves_distinct_tool_call_ids() {
+    auto client = std::make_unique<DuplicateToolCallClient>();
+    auto* client_ptr = client.get();
+
+    ToolRegistry tools;
+    tools.register_tool(std::make_unique<CalculatorTool>());
+
+    AgentRuntimeConfig runtime;
+    runtime.auto_verify = false;
+    runtime.max_model_steps = 4;
+
+    Agent agent(std::move(client),
+                std::make_shared<StaticApprovalProvider>(false),
+                std::filesystem::current_path(),
+                PolicyConfig{},
+                runtime,
+                false,
+                nullptr,
+                std::move(tools));
+
+    const std::string reply = agent.run_turn("run two calculations");
+    expect_equal("done", reply, "agent completes duplicate tool call turn");
+    expect_true(client_ptr->received_messages.size() >= 2,
+                "client receives follow-up request after tool execution");
+
+    const auto& second_turn = client_ptr->received_messages[1];
+    std::vector<std::string> tool_call_ids;
+    for (const auto& message : second_turn) {
+        if (message.role == ChatRole::tool) {
+            tool_call_ids.push_back(message.tool_call_id);
+        }
+    }
+
+    expect_true(tool_call_ids.size() == 2, "two tool results are sent back to the model");
+    expect_equal("call_1", tool_call_ids[0], "first tool result keeps its tool_call_id");
+    expect_equal("call_2", tool_call_ids[1], "second tool result keeps its tool_call_id");
 }
 
 // ============================================================
@@ -485,6 +711,52 @@ void test_agent_clear_history() {
     expect_true(trace.empty(), "history cleared");
 }
 
+void test_agent_failure_escalates_router_to_strong_model() {
+    ScopedTempDir tmp;
+    auto fs = std::make_shared<TestFileSystem>();
+
+    auto fast = std::make_unique<ScriptedStructuredClient>(
+        std::vector<ChatMessage>{
+            make_tool_call_message("read_file", R"({"path":"missing-fast-1.txt"})"),
+            make_tool_call_message("read_file", R"({"path":"missing-fast-2.txt"})"),
+            make_reply_message("Fast path should not handle recovery"),
+        },
+        "fast-test");
+    auto strong = std::make_unique<ScriptedStructuredClient>(
+        std::vector<ChatMessage>{
+            make_tool_call_message("read_file", R"({"path":"missing-strong-1.txt"})"),
+            make_reply_message("Recovered with strong model"),
+        },
+        "strong-test");
+    ScriptedStructuredClient* fast_ptr = fast.get();
+    ScriptedStructuredClient* strong_ptr = strong.get();
+
+    ModelRouter::Config router_config;
+    router_config.enabled = true;
+    router_config.complexity_threshold = 100;
+    router_config.max_fast_tool_calls = 99;
+    auto router = std::make_unique<ModelRouter>(std::move(fast), std::move(strong), router_config);
+
+    ToolRegistry tools;
+    tools.register_tool(std::make_unique<ReadFileTool>(tmp.path(), fs));
+    auto approval = std::make_shared<StaticApprovalProvider>(true);
+
+    AgentRuntimeConfig runtime;
+    runtime.max_model_steps = 6;
+    runtime.max_consecutive_failures = 3;
+    runtime.auto_verify = false;
+
+    Agent agent(std::move(router), approval, tmp.path(), PolicyConfig{},
+                runtime, false, nullptr, std::move(tools));
+
+    const std::string reply = agent.run_turn("Recover after repeated read failures");
+
+    expect_equal("Recovered with strong model", reply,
+                 "router escalates to strong model after repeated failures");
+    expect_true(strong_ptr->call_count == 2, "strong model handles first turn and recovery turn");
+    expect_true(fast_ptr->call_count == 2, "fast model handles intermediate recovery attempts");
+}
+
 // ============================================================
 // 6. THREAD POOL TESTS
 // ============================================================
@@ -639,6 +911,47 @@ void test_prefetch_path_detection() {
     const bool detected = cache.contains(target2);
     std::cerr << "(path detection: " << (detected ? "yes" : "no, using direct warm)") << ") ";
     expect_true(true, "prefetch path detection tested");
+}
+
+void test_http_utils_normalize_and_resolve_static_file() {
+    ScopedTempDir tmp;
+    std::filesystem::create_directories(tmp.path() / "assets");
+    std::ofstream(tmp.path() / "assets" / "app.js") << "console.log('ok');";
+
+    const std::string normalized =
+        http_server_utils::normalize_request_path("/assets/app.js?cache=1#fragment");
+    expect_equal("/assets/app.js", normalized, "normalize_request_path strips query and fragment");
+
+    const auto resolved = http_server_utils::resolve_static_file(tmp.path(), "/assets/app.js");
+    expect_true(resolved.has_value(), "resolve_static_file finds safe asset path");
+    expect_equal("app.js", resolved->filename().string(),
+                 "resolve_static_file returns the requested asset");
+
+    const auto escaped = http_server_utils::resolve_static_file(tmp.path(), "/../../etc/passwd");
+    expect_true(!escaped.has_value(), "resolve_static_file blocks path traversal");
+    expect_true(http_server_utils::looks_like_spa_route("/dashboard/settings"),
+                "looks_like_spa_route accepts extensionless routes");
+    expect_true(!http_server_utils::looks_like_spa_route("/../../etc/passwd"),
+                "looks_like_spa_route rejects traversal attempts");
+}
+
+void test_http_utils_extract_api_token() {
+    const std::unordered_map<std::string, std::string> bearer_headers = {
+        {"authorization", "Bearer secret-token"}
+    };
+    const auto bearer = http_server_utils::extract_api_token(bearer_headers);
+    expect_true(bearer.has_value(), "extract_api_token reads bearer token");
+    expect_equal("secret-token", *bearer, "extract_api_token strips bearer prefix");
+
+    const std::unordered_map<std::string, std::string> header_token = {
+        {"x-bolt-api-token", "header-token"}
+    };
+    const auto direct = http_server_utils::extract_api_token(header_token);
+    expect_true(direct.has_value(), "extract_api_token reads fallback header");
+    expect_true(http_server_utils::constant_time_equals("header-token", *direct),
+                "constant_time_equals matches identical tokens");
+    expect_true(!http_server_utils::constant_time_equals("header-token", "other-token"),
+                "constant_time_equals rejects different tokens");
 }
 
 // ============================================================
@@ -1263,6 +1576,9 @@ int main() {
         {"[TOOL] list_dir lists directory contents", test_list_dir_tool},
         {"[TOOL] search_code interface works", test_search_code_tool},
         {"[TOOL] run_command allows whitelisted, rejects others", test_run_command_tool},
+        {"[TOOL] build_and_test uses ctest for cmake", test_build_and_test_cmake_uses_ctest_and_configures_missing_build_dir},
+        {"[TOOL] task_planner generates default steps", test_task_planner_generates_default_steps},
+        {"[TOOL] task_planner parallel workers run", test_task_planner_parallel_workers},
 
         // 2. Tool registry
         {"[REGISTRY] O(1) hash lookup works", test_tool_registry_o1_lookup},
@@ -1283,6 +1599,8 @@ int main() {
         {"[AGENT] streaming callback receives tokens", test_agent_streaming_callback},
         {"[AGENT] execution trace tracked", test_agent_execution_trace},
         {"[AGENT] clear_history resets state", test_agent_clear_history},
+        {"[AGENT] preserves distinct tool_call ids", test_agent_preserves_distinct_tool_call_ids},
+        {"[AGENT] repeated failures escalate router", test_agent_failure_escalates_router_to_strong_model},
 
         // 6. Thread pool
         {"[POOL] basic submit and get", test_thread_pool_basic},
@@ -1297,6 +1615,8 @@ int main() {
         {"[PREFETCH] warm and get", test_prefetch_cache_warm_and_get},
         {"[PREFETCH] cache miss returns empty", test_prefetch_cache_miss},
         {"[PREFETCH] detects file paths in tokens", test_prefetch_path_detection},
+        {"[HTTP] normalize and resolve static file paths", test_http_utils_normalize_and_resolve_static_file},
+        {"[HTTP] extract API tokens safely", test_http_utils_extract_api_token},
 
         // 8b. Speculative executor
         {"[SPEC] detects and runs read-only tools", test_speculative_executor_detects_and_runs},

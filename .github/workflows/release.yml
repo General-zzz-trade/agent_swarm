@@ -132,8 +132,8 @@ jobs:
 
   # Job 3: Create GitHub Release with all artifacts
   create-release:
-    needs: [build-cli]
-    if: always() && needs.build-cli.result == 'success'
+    needs: [build-cli, build-desktop]
+    if: always() && needs.build-cli.result == 'success' && needs.build-desktop.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
