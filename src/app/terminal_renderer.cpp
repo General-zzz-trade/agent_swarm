@@ -13,6 +13,7 @@
 #endif
 
 #include "../core/interfaces/approval_provider.h"
+#include "terminal_ui_config.h"
 
 namespace {
 
@@ -174,6 +175,9 @@ TerminalRenderer::TerminalRenderer(std::ostream& output)
     if (std::getenv("NO_COLOR")) {
         colors_enabled_ = false;
     }
+
+    const TerminalUiConfig ui_config = load_terminal_ui_config();
+    overlay_status_bar_enabled_ = colors_enabled_ && ui_config.overlay_status_bar;
 
     update_terminal_width();
 }
@@ -691,19 +695,19 @@ void TerminalRenderer::render_status_bar(const std::string& model, int input_tok
     std::string content = bar.str();
     std::string padded = pad_to(content, terminal_width_);
 
-    if (colors_enabled_) {
+    if (overlay_status_bar_enabled_) {
         output_ << "\033[s"                                           // save cursor
                 << "\033[" << terminal_height_ << ";1H"              // move to last row
                 << kBgBlue << kFgWhite << padded << kReset           // render bar
                 << "\033[u";                                         // restore cursor
     } else {
-        output_ << padded << "\n";
+        output_ << dim(content) << "\n";
     }
     output_.flush();
 }
 
 void TerminalRenderer::hide_status_bar() {
-    if (!colors_enabled_) return;
+    if (!overlay_status_bar_enabled_) return;
 
     output_ << "\033[s"
             << "\033[" << terminal_height_ << ";1H"
@@ -995,81 +999,17 @@ void TerminalRenderer::begin_stream() {
 void TerminalRenderer::stream_token(const std::string& token) {
     if (!stream_active_) return;
 
+    // Output tokens immediately as they arrive for real-time streaming UX.
+    // Users see text character by character as the model generates it.
+    output_ << token << std::flush;
     stream_buffer_ += token;
-
-    // Process complete lines from the buffer
-    while (true) {
-        auto newline_pos = stream_buffer_.find('\n');
-        if (newline_pos == std::string::npos) {
-            break;
-        }
-
-        std::string line = stream_buffer_.substr(0, newline_pos);
-        stream_buffer_ = stream_buffer_.substr(newline_pos + 1);
-
-        std::string trimmed = trim(line);
-
-        // Code block fence handling
-        if (starts_with(trimmed, "```")) {
-            if (!in_code_block_) {
-                in_code_block_ = true;
-                code_block_lang_ = trimmed.size() > 3 ? trimmed.substr(3) : "";
-                if (!code_block_lang_.empty()) {
-                    output_ << dim("  " + code_block_lang_) << "\n";
-                }
-            } else {
-                in_code_block_ = false;
-                code_block_lang_.clear();
-            }
-            continue;
-        }
-
-        if (in_code_block_) {
-            // Render as highlighted code line
-            std::string highlighted = highlight_code_keywords(line);
-            if (colors_enabled_) {
-                output_ << "  " << kBgGray << " " << highlighted << " " << kReset << "\n";
-            } else {
-                output_ << "  | " << line << "\n";
-            }
-        } else {
-            // Render as markdown line
-            // Headers
-            if (starts_with(trimmed, "### ")) {
-                output_ << bold(cyan(trimmed.substr(4))) << "\n";
-            } else if (starts_with(trimmed, "## ")) {
-                output_ << bold(cyan(trimmed.substr(3))) << "\n";
-            } else if (starts_with(trimmed, "# ")) {
-                output_ << bold(magenta(trimmed.substr(2))) << "\n";
-            } else if ((starts_with(trimmed, "- ") || starts_with(trimmed, "* ")) &&
-                       trimmed.size() > 2) {
-                output_ << "  \xe2\x80\xa2 " << render_inline_markdown(trimmed.substr(2)) << "\n";
-            } else {
-                output_ << render_inline_markdown(line) << "\n";
-            }
-        }
-        output_.flush();
-    }
 }
 
 void TerminalRenderer::end_stream() {
     if (!stream_active_) return;
 
-    // Flush remaining buffer content
-    if (!stream_buffer_.empty()) {
-        if (in_code_block_) {
-            std::string highlighted = highlight_code_keywords(stream_buffer_);
-            if (colors_enabled_) {
-                output_ << "  " << kBgGray << " " << highlighted << " " << kReset;
-            } else {
-                output_ << "  | " << stream_buffer_;
-            }
-        } else {
-            output_ << render_inline_markdown(stream_buffer_);
-        }
-        output_ << "\n";
-    }
-
+    // stream_token() already outputs tokens in real-time,
+    // so end_stream() just cleans up state without re-rendering.
     stream_buffer_.clear();
     in_code_block_ = false;
     code_block_lang_.clear();
